@@ -23,6 +23,9 @@
 // will need.  For standard cell detail placement,
 // this would be the physical locations for each cell,
 // under any the provided permutation.
+
+use pstools_r;
+
 pub struct DecisionOption<T> {
     pub detail: T,
 //     pub locations: Vec<Point>,
@@ -88,5 +91,6 @@ pub fn hcwt_test () {
     let mut solver: HCwT<i32, i32> = HCwT::new(x);
     solver.solve(&costfunc, 0 as usize);
 
+    println!("Calling PSTOOLS from hcwt_r: {}", pstools_r::psversion());
 
 }
