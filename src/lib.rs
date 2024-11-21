@@ -57,34 +57,22 @@
 
 use pstools_r;
 
-pub struct DecisionOption<DecisionDetail> {
-    pub detail: DecisionDetail,
-//     pub locations: Vec<Point>,
-    pub index: usize, // For telling the caller about the option
-}
 
 #[derive(Clone, Copy)]
 pub struct SelectionNode<NodeDetail> {
-    pub cost: f32,   // Cost for this particular instance
-    pub choice: f32, // Choice made here
     pub parent: usize, // Index of the choice in the prior decision
     pub detail: NodeDetail,
 }
 
-// The number of locations in the DecisionOption should
-// match the number of elements being operated on for the
-// decision.  We select option N (out of multiple choices),
-// and then the elements are moved to the locations of the
-// specific decision option
 pub struct Decision<DecisionDetail> {
-    pub elements: Vec<usize>, // Elements being operated on
-    pub options: Vec<DecisionOption<DecisionDetail>>,
+        pub details: Vec<DecisionDetail>,
 }
 
-pub struct HCwT<DecisionDetail,UserContext,NodeDetail> {
-    pub decisions: Vec<Decision<DecisionDetail>>,
+pub struct HCwT<UserContext,DecisionDetail,NodeDetail> {
     pub user_context: UserContext,
+    pub decisions: Vec<Decision<DecisionDetail>>,
     pub solution: HCwTSolution<NodeDetail>,
+    pub debug: u32,
 }
 
 #[derive(Clone)]
@@ -101,45 +89,43 @@ pub struct HCwTSolution<NodeDetail> {
 // Push decisions and options 
 // Create the solver, and we provide a struct
 // that gives additional information to the cost function.
-impl <DecisionDetail,UserContext,NodeDetail> HCwT<DecisionDetail,UserContext,NodeDetail> {
-    pub fn new(user_context: UserContext) -> HCwT<DecisionDetail,UserContext,NodeDetail> {
+impl <UserContext,DecisionDetail,NodeDetail> HCwT<UserContext,DecisionDetail,NodeDetail> {
+    pub fn new(user_context: UserContext) -> HCwT<UserContext,DecisionDetail,NodeDetail> {
         HCwT {
-            decisions: Vec::new(),
             user_context,
+            decisions: Vec::new(),
             solution: HCwTSolution {
                 layers: Vec::new(),
-            }
-
+            },
+            debug: 0,
         }
     }
 
-    pub fn foo(&self) {
-        println!("Function foo!");
-    }
-    // Pass information on the choices to the solver, and then
+        // Pass information on the choices to the solver, and then
     // the solver figures out how much this configuration
     // costs..  Returns that.  
     pub fn solve(&mut self,
-                root: NodeDetail,
-                 generate: &dyn Fn(&HCwT<DecisionDetail,UserContext,NodeDetail>, &UserContext, usize, &mut Vec<SelectionNode<NodeDetail>>) -> f32,
-                 filter: &dyn Fn(&HCwT<DecisionDetail,UserContext,NodeDetail>, &Vec<SelectionNode<NodeDetail>>) -> Vec<SelectionNode<NodeDetail>>,
-                 display: &dyn Fn(&HCwT<DecisionDetail,UserContext,NodeDetail>, DecisionDetail, &mut UserContext),
-                 level: usize) -> HCwTSolution<NodeDetail> {
+                root: Vec<NodeDetail>,
+                 generate: &dyn Fn(&HCwT<UserContext,DecisionDetail,NodeDetail>, &UserContext, usize, &DecisionDetail, usize, &SelectionNode<NodeDetail>, &mut Vec<SelectionNode<NodeDetail>>),
+                 filter: &dyn Fn(&HCwT<UserContext,DecisionDetail,NodeDetail>, &mut Vec<SelectionNode<NodeDetail>>) -> Vec<SelectionNode<NodeDetail>>,
+                 display: &dyn Fn(&HCwT<UserContext,DecisionDetail,NodeDetail>, DecisionDetail, &mut UserContext),
+                 level: usize) {
         let mut tree: HCwTSolution<NodeDetail> = HCwTSolution {
             layers: Vec::new(),
         };
+        self.solution = tree;
 
         // First layer of the solution tree is the root node
-        tree.layers.push(HCwTLayer { nodes: Vec::new() });
-        tree.layers[0].nodes.push(SelectionNode {
-            cost: 0.0,
-            choice: 0.0,
-            parent: 0,
-            detail: root
-        });
+        self.solution.layers.push(HCwTLayer { nodes: Vec::new() });
+        for node in root {
+            self.solution.layers[0].nodes.push(SelectionNode {
+                parent: 0,
+                detail: node,
+            });
+        }
 
         for level in 0..self.decisions.len() {
-            println!("Level {}, {} decisions", level, self.decisions[level].options.len());
+            println!("Level {}, {} decisions", level, self.decisions[level].details.len());
             
             let mut new_list = Vec::new();
 
@@ -147,28 +133,24 @@ impl <DecisionDetail,UserContext,NodeDetail> HCwT<DecisionDetail,UserContext,Nod
             // selections from the prior level.  Note that at level zero, there's
             // no prior
             
-            println!("Level {} options {}", level, self.decisions[level].options.len());
-            for opt in &self.decisions[level].options {
-                for node in &tree.layers[level].nodes {
-                    generate(self, &self.user_context, level, &mut new_list);
+            println!("Level {} options {}", level, self.decisions[level].details.len());
+            for parent_index in 0..self.decisions[level].details.len() {
+                for node_index in 0..self.solution.layers[level].nodes.len() {
+                    generate(self, &self.user_context, level, &self.decisions[level].details[parent_index], node_index, &self.solution.layers[level].nodes[node_index], &mut new_list);
                 }
             }
-            tree.layers.push(HCwTLayer { nodes: new_list});
+            self.solution.layers.push(HCwTLayer { nodes: filter(self, &mut new_list)});
             // Then, filter everything in this level
         }
-        tree
+        
     }
     pub fn new_decision(&self) -> Decision<DecisionDetail> {
         Decision {
-            elements: Vec::new(),
-            options: Vec::new(),
+            details: Vec::new(),
         }
     }
     pub fn add_option(&self, d: &mut Decision<DecisionDetail>, detail: DecisionDetail) {
-        d.options.push(DecisionOption {
-            detail: detail,
-            index: 0,
-        });
+        d.details.push(detail);
     }
     pub fn add_decision(&mut self, d: Decision<DecisionDetail>) {
         self.decisions.push(d);
@@ -200,6 +182,7 @@ pub struct Context<'a> {
 pub fn hcwt_test () {
     println!("HCWT test called");
     let z = 999;
+    /*
     let mut ctx = Context {
         x: 33,
         y: 22,
@@ -210,6 +193,7 @@ pub fn hcwt_test () {
     let mut solver: HCwT<u32, Context,u32> = HCwT::new(ctx);
     solver.solve(x, &generate, &filter, &display, 0 as usize);
     solver.foo();
+    */
 
     println!("Calling PSTOOLS from hcwt_r: {}", pstools_r::psversion());
 
