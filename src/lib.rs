@@ -56,7 +56,7 @@
 // Ignore the parent link in any node at level 0.
 
 use pstools_r;
-
+mod grid;
 
 #[derive(Clone, Copy)]
 pub struct SelectionNode<NodeDetail> {
@@ -106,7 +106,7 @@ impl <UserContext,DecisionDetail,NodeDetail> HCwT<UserContext,DecisionDetail,Nod
     // costs..  Returns that.  
     pub fn solve(&mut self,
                 root: Vec<NodeDetail>,
-                 generate: &dyn Fn(&HCwT<UserContext,DecisionDetail,NodeDetail>, &UserContext, usize, &DecisionDetail, usize, &SelectionNode<NodeDetail>, &mut Vec<SelectionNode<NodeDetail>>),
+                 generate: &dyn Fn(&HCwT<UserContext,DecisionDetail,NodeDetail>, usize, &DecisionDetail, usize, &SelectionNode<NodeDetail>, &mut Vec<SelectionNode<NodeDetail>>),
                  filter: &dyn Fn(&HCwT<UserContext,DecisionDetail,NodeDetail>, &mut Vec<SelectionNode<NodeDetail>>) -> Vec<SelectionNode<NodeDetail>>,
                  display: &dyn Fn(&HCwT<UserContext,DecisionDetail,NodeDetail>, DecisionDetail, &mut UserContext),
                  level: usize) {
@@ -114,6 +114,8 @@ impl <UserContext,DecisionDetail,NodeDetail> HCwT<UserContext,DecisionDetail,Nod
             layers: Vec::new(),
         };
         self.solution = tree;
+
+        let g = grid::Grid::new(4, 5);
 
         // First layer of the solution tree is the root node
         self.solution.layers.push(HCwTLayer { nodes: Vec::new() });
@@ -125,7 +127,9 @@ impl <UserContext,DecisionDetail,NodeDetail> HCwT<UserContext,DecisionDetail,Nod
         }
 
         for level in 0..self.decisions.len() {
-            println!("Level {}, {} decisions", level, self.decisions[level].details.len());
+            if self.debug != 0 {
+                println!("Level {}, {} decisions", level, self.decisions[level].details.len());
+            }
             
             let mut new_list = Vec::new();
 
@@ -133,10 +137,12 @@ impl <UserContext,DecisionDetail,NodeDetail> HCwT<UserContext,DecisionDetail,Nod
             // selections from the prior level.  Note that at level zero, there's
             // no prior
             
-            println!("Level {} options {}", level, self.decisions[level].details.len());
-            for parent_index in 0..self.decisions[level].details.len() {
+            if self.debug != 0 {
+                println!("Level {} options {}", level, self.decisions[level].details.len());
+            }
+            for decision_index in 0..self.decisions[level].details.len() {
                 for node_index in 0..self.solution.layers[level].nodes.len() {
-                    generate(self, &self.user_context, level, &self.decisions[level].details[parent_index], node_index, &self.solution.layers[level].nodes[node_index], &mut new_list);
+                    generate(&self, level, &self.decisions[level].details[decision_index], node_index, &self.solution.layers[level].nodes[node_index], &mut new_list);
                 }
             }
             self.solution.layers.push(HCwTLayer { nodes: filter(self, &mut new_list)});
@@ -158,7 +164,7 @@ impl <UserContext,DecisionDetail,NodeDetail> HCwT<UserContext,DecisionDetail,Nod
 
 }
 
-pub fn generate(hcwt: &HCwT<u32, Context,u32>, context:&Context, level: usize, nodes: &mut Vec<SelectionNode<u32>>) -> f32 {
+pub fn generate(_hcwt: &HCwT<u32, Context,u32>, _context:&Context, _level: usize, _des: &mut Vec<SelectionNode<u32>>) -> f32 {
     // nodes.push(0);
     3.3
 }
