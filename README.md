@@ -16,6 +16,6 @@ require that the generate function create a mutable instance
 of whatever it needs to mutate?  That might be the way
 to go.
 
-If the hcwt structure can mutate, then we can give
+If the hcwt structure can mutate, then we can't give
 references to he decisions and nodes.  So maybe bail on
 that.  

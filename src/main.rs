@@ -9,18 +9,24 @@ fn main() {
     // crate::lib::hcwt_test();
     hcwt_r::hcwt_test();
 
-    let g = grid::Grid::new(4, 5);
+    // let g = grid::Grid::new(4, 5);
 
-    let mut x: i32;
-    x = 10;
     let mut ferry_root = FerryNode {
         left_length: 0,
         right_length: 0,
     };
     let fc = FerryContext {
-        maxlen: 60,
+        maxlen: 6,
     };
-    let mut ferry_problem: hcwt_r::HCwT<FerryContext,FerryDecision,FerryNode> = hcwt_r::HCwT::new(fc);
+
+    let dec = FerryDecision {
+        length: 0, left: false,
+    };
+    let mut root_dec = Vec::new();
+    root_dec.push(dec);
+    let mut roots = Vec::new();
+    roots.push(ferry_root);
+    let mut ferry_problem: hcwt_r::HCwT<FerryContext,FerryDecision,FerryNode> = hcwt_r::HCwT::new(fc, root_dec, roots);
 
 
     let mut dx = ferry_problem.new_decision();
@@ -45,12 +51,11 @@ fn main() {
     ferry_problem.add_option( &mut dx, FerryDecision{length: 3, left: false});
     ferry_problem.add_decision(dx);    
 
-    let mut roots = Vec::new();
-    roots.push(ferry_root);
-    ferry_problem.solve(roots, &generate, &filter, &display, 0 as usize);
 
-    let last = &ferry_problem.solution.layers.last().unwrap().nodes;
-    let level = &ferry_problem.solution.layers.len() - 1;
+    ferry_problem.solve(&generate, &filter);
+
+    let last = &ferry_problem.levels.last().unwrap().nodes;
+    let level = &ferry_problem.levels.len() - 1;
 
     for i in 0..last.len() {
         let node = &last[i];
@@ -58,11 +63,9 @@ fn main() {
         trace(&ferry_problem, level, i);
     }
 
-    let order = grid::perms(4, 6);
-    grid::print_permutations(&order);
-
-
-
+    // let order = grid::perms(4, 6);
+    // grid::print_permutations(&order);
+    grid::grid_test();
 
 }
 
@@ -70,10 +73,10 @@ fn main() {
 fn trace(ferry_problem: &hcwt_r::HCwT<FerryContext,FerryDecision,FerryNode>, level: usize, index: usize)
 {
     if level > 0 {
-        trace(ferry_problem, level - 1, ferry_problem.solution.layers[level].nodes[index].parent);
+        trace(ferry_problem, level - 1, ferry_problem.levels[level].nodes[index].parent);
     }
-    let nd = &ferry_problem.solution.layers[level].nodes[index].detail;
-    println!("{}  {}  (parent {})", nd.left_length, nd.right_length, ferry_problem.solution.layers[level].nodes[index].parent);
+    let nd = &ferry_problem.levels[level].nodes[index].detail;
+    println!("{}  {}  (parent {})", nd.left_length, nd.right_length, ferry_problem.levels[level].nodes[index].parent);
 
 }
 
@@ -103,9 +106,11 @@ pub struct FerryContext {
     pub maxlen: u32,
 }
 
-pub fn generate(hcwt: &HCwT<FerryContext,FerryDecision,FerryNode>, level: usize, detail: &FerryDecision, parent_index: usize, parent_node: &SelectionNode<FerryNode>,
-    nodes: &mut Vec<SelectionNode<FerryNode>>)
+pub fn generate(hcwt: &HCwT<FerryContext,FerryDecision,FerryNode>, level: usize, dec_index: usize, parent_index: usize, nodes: &mut Vec<SelectionNode<FerryNode>>)
 {
+    let parent_node = hcwt.levels[level - 1].nodes[parent_index];
+    let detail = &hcwt.levels[level].decisions[dec_index];
+
     if hcwt.debug != 0 {
         println!("Level {}, decision len {} left{}", level, detail.length, detail.left);
         println!(" Prior  {} {}  index {}", parent_node.detail.left_length, parent_node.detail.right_length, parent_index);
@@ -123,7 +128,7 @@ pub fn generate(hcwt: &HCwT<FerryContext,FerryDecision,FerryNode>, level: usize,
     }
 
 }
-pub fn filter(hcwt: &HCwT<FerryContext,FerryDecision,FerryNode>, nodes: &mut Vec<SelectionNode<FerryNode>>) -> Vec<SelectionNode<FerryNode>>
+pub fn filter(hcwt: &HCwT<FerryContext,FerryDecision,FerryNode>, level: usize, nodes: &mut Vec<SelectionNode<FerryNode>>) -> Vec<SelectionNode<FerryNode>>
 {
     let mut result = Vec::new();
     nodes.sort_by_key(|item|(item.detail.left_length));

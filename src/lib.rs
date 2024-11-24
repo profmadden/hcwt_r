@@ -64,25 +64,16 @@ pub struct SelectionNode<NodeDetail> {
     pub detail: NodeDetail,
 }
 
-pub struct Decision<DecisionDetail> {
-        pub details: Vec<DecisionDetail>,
+pub struct Level<DecisionDetail,NodeDetail> {
+        pub decisions: Vec<DecisionDetail>,
+        pub nodes: Vec<SelectionNode<NodeDetail>>,
 }
 
 pub struct HCwT<UserContext,DecisionDetail,NodeDetail> {
     pub user_context: UserContext,
-    pub decisions: Vec<Decision<DecisionDetail>>,
-    pub solution: HCwTSolution<NodeDetail>,
+    pub levels: Vec<Level<DecisionDetail,NodeDetail>>,
+    // pub solution: HCwTSolution<NodeDetail>,
     pub debug: u32,
-}
-
-#[derive(Clone)]
-pub struct HCwTLayer<NodeDetail> {
-    pub nodes: Vec<SelectionNode<NodeDetail>>,
-}
-
-#[derive(Clone)]
-pub struct HCwTSolution<NodeDetail> {
-    pub layers: Vec<HCwTLayer<NodeDetail>>,
 }
 
 
@@ -90,45 +81,41 @@ pub struct HCwTSolution<NodeDetail> {
 // Create the solver, and we provide a struct
 // that gives additional information to the cost function.
 impl <UserContext,DecisionDetail,NodeDetail> HCwT<UserContext,DecisionDetail,NodeDetail> {
-    pub fn new(user_context: UserContext) -> HCwT<UserContext,DecisionDetail,NodeDetail> {
-        HCwT {
+    pub fn new(user_context: UserContext, decisions: Vec<DecisionDetail>, roots: Vec<NodeDetail>) -> HCwT<UserContext,DecisionDetail,NodeDetail> {
+        let mut hc = HCwT {
             user_context,
-            decisions: Vec::new(),
-            solution: HCwTSolution {
-                layers: Vec::new(),
-            },
+            levels: Vec::new(),
             debug: 0,
-        }
-    }
-
-        // Pass information on the choices to the solver, and then
-    // the solver figures out how much this configuration
-    // costs..  Returns that.  
-    pub fn solve(&mut self,
-                root: Vec<NodeDetail>,
-                 generate: &dyn Fn(&HCwT<UserContext,DecisionDetail,NodeDetail>, usize, &DecisionDetail, usize, &SelectionNode<NodeDetail>, &mut Vec<SelectionNode<NodeDetail>>),
-                 filter: &dyn Fn(&HCwT<UserContext,DecisionDetail,NodeDetail>, &mut Vec<SelectionNode<NodeDetail>>) -> Vec<SelectionNode<NodeDetail>>,
-                 display: &dyn Fn(&HCwT<UserContext,DecisionDetail,NodeDetail>, DecisionDetail, &mut UserContext),
-                 level: usize) {
-        let mut tree: HCwTSolution<NodeDetail> = HCwTSolution {
-            layers: Vec::new(),
         };
-        self.solution = tree;
+        hc.levels.push(Level {
+            decisions,
+            nodes: Vec::new(),
+        });
 
-        let g = grid::Grid::new(4, 5);
-
-        // First layer of the solution tree is the root node
-        self.solution.layers.push(HCwTLayer { nodes: Vec::new() });
-        for node in root {
-            self.solution.layers[0].nodes.push(SelectionNode {
+        for node in roots {
+            hc.levels[0].nodes.push(SelectionNode {
                 parent: 0,
                 detail: node,
             });
         }
 
-        for level in 0..self.decisions.len() {
+        hc
+    }
+
+        // Pass information on the choices to the solver, and then
+    // the solver figures out how much this configuration
+    // costs..  Returns that.  
+    // Generate gets the HCWT struct, the level, and the parent decision index, and the parent node index.  From that,
+    // it can get all the info needed to potentially generate new nodes.  Simplifies the
+    // signature.
+    pub fn solve(&mut self,
+                 generate: &dyn Fn(&HCwT<UserContext,DecisionDetail,NodeDetail>, usize, usize, usize, &mut Vec<SelectionNode<NodeDetail>>),
+                 filter: &dyn Fn(&HCwT<UserContext,DecisionDetail,NodeDetail>, usize, &mut Vec<SelectionNode<NodeDetail>>) -> Vec<SelectionNode<NodeDetail>>)
+        {
+        // Level 0 is the initialization -- so we start processing with level 1
+        for level in 1..self.levels.len() {
             if self.debug != 0 {
-                println!("Level {}, {} decisions", level, self.decisions[level].details.len());
+                println!("Level {}, {} decisions", level, self.levels[level].decisions.len());
             }
             
             let mut new_list = Vec::new();
@@ -138,28 +125,31 @@ impl <UserContext,DecisionDetail,NodeDetail> HCwT<UserContext,DecisionDetail,Nod
             // no prior
             
             if self.debug != 0 {
-                println!("Level {} options {}", level, self.decisions[level].details.len());
+                println!("Level {} options {}", level, self.levels[level].decisions.len());
             }
-            for decision_index in 0..self.decisions[level].details.len() {
-                for node_index in 0..self.solution.layers[level].nodes.len() {
-                    generate(&self, level, &self.decisions[level].details[decision_index], node_index, &self.solution.layers[level].nodes[node_index], &mut new_list);
+            for decision_index in 0..self.levels[level].decisions.len() {
+                for node_index in 0..self.levels[level - 1].nodes.len() {
+                    generate(&self, level, decision_index, node_index, &mut new_list);
                 }
             }
-            self.solution.layers.push(HCwTLayer { nodes: filter(self, &mut new_list)});
+            self.levels[level].nodes = filter(self, level, &mut new_list);
+
+            // self.solution.layers.push(HCwTLayer { nodes: filter(self, &mut new_list)});
             // Then, filter everything in this level
         }
         
     }
-    pub fn new_decision(&self) -> Decision<DecisionDetail> {
-        Decision {
-            details: Vec::new(),
+    pub fn new_decision(&self) -> Level<DecisionDetail,NodeDetail> {
+        Level {
+            decisions: Vec::new(),
+            nodes: Vec::new(),
         }
     }
-    pub fn add_option(&self, d: &mut Decision<DecisionDetail>, detail: DecisionDetail) {
-        d.details.push(detail);
+    pub fn add_option(&self, d: &mut Level<DecisionDetail,NodeDetail>, detail: DecisionDetail) {
+        d.decisions.push(detail);
     }
-    pub fn add_decision(&mut self, d: Decision<DecisionDetail>) {
-        self.decisions.push(d);
+    pub fn add_decision(&mut self, d: Level<DecisionDetail,NodeDetail>) {
+        self.levels.push(d);
     }
 
 }

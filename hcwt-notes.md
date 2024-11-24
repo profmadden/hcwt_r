@@ -34,3 +34,9 @@ moving cell.  We map all the positions, then compute
 the total cost of nets that close consideration
 on the level.  
 
+----
+Working on the grid.  Have a simple test case going,
+where I can generate a grid of arbitrary size, and
+add mesh connections.  HPWL calculations look OK.
+
+Will build the HCwT solver for it tomorrow.
