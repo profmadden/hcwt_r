@@ -112,8 +112,9 @@ impl <UserContext,DecisionDetail,NodeDetail> HCwT<UserContext,DecisionDetail,Nod
     //  generate(&hcwt, level, decision_index, parent_node_index, new_list);
     //  filter(&hcwt, level, list) -> filtered_list
     pub fn solve(&mut self,
-                 generate: &dyn Fn(&HCwT<UserContext,DecisionDetail,NodeDetail>, usize, usize, usize, &mut Vec<SelectionNode<NodeDetail>>),
-                 filter: &dyn Fn(&HCwT<UserContext,DecisionDetail,NodeDetail>, usize, &mut Vec<SelectionNode<NodeDetail>>) -> Vec<SelectionNode<NodeDetail>>)
+                context: &mut UserContext,
+                 generate: &dyn Fn(&HCwT<UserContext,DecisionDetail,NodeDetail>, &mut UserContext, usize, usize, usize, &mut Vec<SelectionNode<NodeDetail>>),
+                 filter: &dyn Fn(&HCwT<UserContext,DecisionDetail,NodeDetail>, &mut UserContext, usize, &mut Vec<SelectionNode<NodeDetail>>) -> Vec<SelectionNode<NodeDetail>>)
         {
         // Level 0 is the initialization -- so we start processing with level 1
         for level in 1..self.levels.len() {
@@ -132,10 +133,10 @@ impl <UserContext,DecisionDetail,NodeDetail> HCwT<UserContext,DecisionDetail,Nod
             }
             for decision_index in 0..self.levels[level].decisions.len() {
                 for node_index in 0..self.levels[level - 1].nodes.len() {
-                    generate(&self, level, decision_index, node_index, &mut new_list);
+                    generate(&self, context, level, decision_index, node_index, &mut new_list);
                 }
             }
-            self.levels[level].nodes = filter(self, level, &mut new_list);
+            self.levels[level].nodes = filter(self, context, level, &mut new_list);
 
             // self.solution.layers.push(HCwTLayer { nodes: filter(self, &mut new_list)});
             // Then, filter everything in this level

@@ -53,6 +53,7 @@ use pstools_r;
 use rand::Rng;
 use crate::{*};
 
+#[derive(Clone)]
 pub struct Grid {
     pub x: usize,
     pub y: usize,
@@ -258,6 +259,21 @@ impl Grid {
         }        
     }
 
+    // opt_layers takes in a series of bin IDs, arranged in layers.
+    // Used with the grid code, cell maping of cells to bins, and use
+    // an inverse map to determine which bin contains a cell.
+    // From this, we know which cells are mapped to a permutation of
+    // bins in a layer.  We can also determine the nets that are
+    // in play, and the layer at which a net is closed.
+    //
+    // Moving code out of the original opt_h, to make it generic, and
+    // able to be reused in a bunch of spots.
+    pub fn opt_layers(&mut self, layers: Vec<Vec<usize>>, delta: u32) {
+        println!("Optimize {} layers, delta {}", layers.len(), delta);
+
+
+    }
+
     pub fn opt_h(&mut self, llx: usize, lly: usize, urx: usize, ury: usize) {
         
         println!("Optimize {} strips of {} tall", urx - llx, ury - lly);
@@ -310,11 +326,19 @@ impl Grid {
 
 
         // HCWT Root Context
-        let c = Context {
+        let mut c = Context {
             base_cost: 0.0,
             mapping: self.map_c2b.clone(),
             edges: self.edges.clone(),
             bins: self.bins.clone(),
+            grid: self.clone(),
+        };
+        let mut share_c = Context {
+            base_cost: 0.0,
+            mapping: self.map_c2b.clone(),
+            edges: self.edges.clone(),
+            bins: self.bins.clone(),
+            grid: self.clone(),
         };
         // HCWT ROOT NODES
         let root = Node {
@@ -372,8 +396,8 @@ impl Grid {
         }
 
        
-        
-        hcwt.solve(&generate, &filter);
+        // let mut tmpgrid = c;
+        hcwt.solve(&mut share_c, &generate, &filter);
 
 
         println!("Solved ----");
@@ -461,25 +485,31 @@ fn trace(hcwt: &HCwT<Context,Decision,Node>, level: usize, index: usize, mapping
 }
 
 
-fn generate(hcwt: &HCwT<Context,Decision,Node>, level: usize, decision_index: usize, parent_node_index: usize, nodes: &mut Vec<SelectionNode<Node>>) {
+fn generate(hcwt: &HCwT<Context,Decision,Node>, context: &mut Context, level: usize, decision_index: usize, parent_node_index: usize, nodes: &mut Vec<SelectionNode<Node>>) {
     // println!("Generate for level {}", level);
     let detail = &hcwt.levels[level].decisions[decision_index];
     let parent_node = &hcwt.levels[level - 1].nodes[parent_node_index];
     
     // Set up the mapping for the prior levels
-    let mut tmpmap = hcwt.user_context.mapping.clone();
-    trace(hcwt, level - 1, parent_node_index, &mut tmpmap);
+    // let mut tmpmap = hcwt.user_context.mapping.clone();
+    // trace(hcwt, level - 1, parent_node_index, &mut tmpmap);
+    trace(hcwt, level - 1, parent_node_index, &mut context.mapping);
 
     let d = &hcwt.levels[level].decisions[0];
     for mi in 0..detail.mappings.len() {
         for i in 0..detail.cells.len() {
             // println!("Generate map cell {} to bin {}", detail.cells[i], detail.mappings[mi][i]);
-            tmpmap[d.cells[i]] = d.mappings[mi][i];
+            // tmpmap[d.cells[i]] = d.mappings[mi][i];
+            context.mapping[d.cells[i]] = d.mappings[mi][i];
         }
 
         let mut new_node = parent_node.detail;
         new_node.selection = mi;
-        let incremental = net_cost(&tmpmap, &d.closenets, &hcwt.user_context.edges, &hcwt.user_context.bins);
+        // let incremental = net_cost(&tmpmap, &d.closenets, &hcwt.user_context.edges, &hcwt.user_context.bins);
+        let incremental = net_cost(&context.mapping, &d.closenets, &context.edges, &context.bins);
+        // if incremental != inc2 {
+        //    println!("ERROR!  Mismatch on incremental!");
+        // }
         new_node.cost = parent_node.detail.cost + incremental;
         // println!("Prior cost: {} increment {} now total {}", parent_node.detail.cost, incremental, new_node.cost);
         nodes.push(SelectionNode{parent: parent_node_index, detail: new_node});
@@ -487,7 +517,7 @@ fn generate(hcwt: &HCwT<Context,Decision,Node>, level: usize, decision_index: us
 }
 
 
-fn filter(hcwt: &HCwT<Context,Decision,Node>, level: usize, nodes: &mut Vec<SelectionNode<Node>>) -> Vec<SelectionNode<Node>>
+fn filter(hcwt: &HCwT<Context,Decision,Node>, context: &mut Context, level: usize, nodes: &mut Vec<SelectionNode<Node>>) -> Vec<SelectionNode<Node>>
 {
     let mut result = nodes.clone();
     result.sort_by_key({|a| a.detail.cost as i32});
@@ -503,6 +533,7 @@ struct Context {
     mapping: Vec<usize>,
     edges: Vec<Edge>,
     bins: Vec<Bin>,
+    grid: Grid,
 }
 struct Decision {
     cells: Vec<usize>,
