@@ -60,7 +60,8 @@ pub struct Grid {
     pub bins: Vec<Bin>,
     pub map_c2b: Vec<usize>,
     pub edges: Vec<Edge>,
-    pub rand_value: u32,
+    pub rand_value: u32,  // Used for the scramble, so that results are stable
+    pub debug: bool,
 } 
 
 #[derive(Copy,Clone)]
@@ -147,14 +148,6 @@ pub fn print_permutations(order: &Vec<Permlist>) {
     }
 }
 impl Grid {
-    pub fn gi(&self, x: usize, y: usize) -> usize {
-        (y * self.x) + x
-    }
-    pub fn nextrand(&mut self) -> u32 {
-        self.rand_value = (self.rand_value % 77) * (self.rand_value % 33) | (self.rand_value << 8);
-
-        self.rand_value
-    }
     pub fn new(x: usize, y: usize)-> Grid {
         let count = (x * y) as usize;
         let mut g = Grid {
@@ -164,11 +157,12 @@ impl Grid {
             map_c2b: vec!(0 as usize; count),
             edges: Vec::new(),
             rand_value: 8675309,
+            debug: false,
         };
 
         for y in 0..y {
             for x in 0..x {
-                let idx = g.gi(x, y);
+                let idx = g.grid_index(x, y);
                 g.bins.push(Bin { x: x as f32, y: y as f32, grid_x: x, grid_y: y, index: idx });
                 g.map_c2b[idx] = idx;
             }
@@ -176,9 +170,28 @@ impl Grid {
 
         g
     }
+
+    pub fn grid_index(&self, x: usize, y: usize) -> usize {
+        (y * self.x) + x
+    }
+    pub fn index_to_grid(&self, n: usize) -> (usize, usize) {
+        ((n / self.x), n % self.x)
+    }
+
+    // Simple, low quality random number generator -- for the
+    // scramble, I don't actually want random numbers -- I want something
+    // that is repeatable and predictable, to make debugging easier!
+    // Seems like Rust has good (really really random!) random numbers?
+    pub fn nextrand(&mut self) -> u32 {
+        self.rand_value = (self.rand_value % 77) * (self.rand_value % 33) | (self.rand_value << 8);
+
+        self.rand_value
+    }
+    
+    // Adds an edge to the grid, with a weight.
     pub fn add_edge(&mut self, x1: usize, y1: usize, x2: usize, y2: usize, weight: f32) {
-        let idx1 = self.gi(x1, y1);
-        let idx2 = self.gi(x2, y2);
+        let idx1 = self.grid_index(x1, y1);
+        let idx2 = self.grid_index(x2, y2);
         if (idx1 < idx2) {
             self.edges.push(Edge { a: idx1, b: idx2, weight});
         } else {
@@ -186,6 +199,8 @@ impl Grid {
         }
 
     }
+
+    // Computes the weighted cost of all edges, given a mapping of cells to bins
     pub fn grid_cost(&self, map:&Vec<usize>) -> f32 {
         let mut total = 0.0;
 
@@ -206,17 +221,22 @@ impl Grid {
         total
     }
 
-    
-
-    pub fn print(&self, map: &Vec<usize>) {
-        println!("{} x {} grid", self.x, self.y);
+    pub fn inverse(&self, map: &Vec<usize>) -> Vec<usize> {
         let mut inverse_map = vec!(0 as usize; self.bins.len());
         for i in 0..map.len() {
             inverse_map[map[i]] = i;
         }
+        inverse_map
+    }
+    
+    // Pretty-prints the assignment
+    pub fn print(&self, map: &Vec<usize>) {
+        println!("{} x {} grid", self.x, self.y);
+        let inverse_map = self.inverse(map);
+
         for y in 0..self.y {
             for x in 0..self.x {
-                let bin = self.gi(x, y);
+                let bin = self.grid_index(x, y);
                 print!("{:3}[{:3}] ", inverse_map[bin], bin);
                 //print!("{:3} ", inverse_map[bin]);
             }
@@ -224,6 +244,7 @@ impl Grid {
         }
         println!("Total cost: {}", self.grid_cost(map));
     }
+
     fn pull_random(&mut self, list: &mut Vec<usize>) -> usize {
         let mut rng = rand::thread_rng();
 
@@ -238,22 +259,23 @@ impl Grid {
     }
     pub fn scramble(&mut self, llx: usize, lly: usize, urx: usize, ury: usize) {
         
-        let mut inverse_map = vec!(0 as usize; self.bins.len());
-        for i in 0..self.map_c2b.len() {
-            inverse_map[i] = self.map_c2b[i];
-        }
+        let inverse_map = self.inverse(&self.map_c2b);
 
-        let mut list_b2c = Vec::new();
+
+        // Get all of the cells within this window of the grid
+        let mut scramble_cells = Vec::new();
         for x in llx..urx {
             for y in lly..ury {
-                let idx = self.gi(x, y);
-                list_b2c.push(inverse_map[idx]);
+                let idx = self.grid_index(x, y);
+                scramble_cells.push(inverse_map[idx]);
             }
         }
+        // Pull one cell out of the scramble at a time, and insert
+        // into the grid
         for x in llx..urx {
             for y in lly..ury {
-                let idx = self.gi(x, y);
-                let c = self.pull_random(&mut list_b2c);
+                let idx = self.grid_index(x, y);
+                let c = self.pull_random(&mut scramble_cells);
                 self.map_c2b[c] = idx;
             }
         }        
@@ -272,17 +294,184 @@ impl Grid {
         println!("Optimize {} layers, delta {}", layers.len(), delta);
 
 
+        let inverse_map = self.inverse(&self.map_c2b);
+
+        let mut cellnet = Vec::new();
+        for i in 0..self.bins.len() {
+            cellnet.push(Vec::new());
+        }
+        for i in 0..self.edges.len() {
+            let e = &self.edges[i];
+            cellnet[e.a].push(i);
+            cellnet[e.b].push(i);
+            // println!("Edge {}  connects {} to {}", i, e.a, e.b);
+        }
+
+        let mut highmark = vec![0; self.edges.len()];
+        // Now determine the last level any particular edge is touched at
+        let mut level = 1;
+        for layer in &layers {
+            for idx in layer {
+                // println!("MARK grid {} is cell {}  inverse (not {})", idx, inverse_map[idx], self.map_c2b[idx]);
+                let cell_id = inverse_map[*idx];
+                for edge_id in &cellnet[cell_id]{
+                    highmark[*edge_id] = level;
+                    // println!("     edge {}  connect {} {}  at level {}", edge_id, self.edges[*edge_id].a, self.edges[*edge_id].b, level);
+                }
+            }
+            level = level + 1;
+        }      
+
+        // Group the edges by levels -- level 0 is precomputed,
+        // otherwise it gets attached to the level where the last coord is set.
+        let mut netlevels: Vec<Vec<usize>> = vec![Vec::new(); level];
+        for eidx in 0..self.edges.len() {
+            netlevels[highmark[eidx]].push(eidx);
+        }
+
+        if self.debug {
+            for i in 0..level {
+                println!("Edges at level {}", i);
+                for v in &netlevels[i] {
+                    println!("Edge {}", v);
+                }
+            }
+        }  
+
+        // HCWT Root Context.  Needed for constructing the HCwT solver,
+        // as the type definition needs the generics filled out.  Might
+        // be a cleaner way to do this.  The context passed with the HCwT
+        // struct doesn't get used here.
+        let mut c = Context {
+            base_cost: 0.0,
+            grid: self.clone(),
+        };
+        // A shared context that gets passed to generate and filter.
+        // This one gets modified by generate, when tracing for the maps
+        let mut share_c = Context {
+            base_cost: 0.0,
+            grid: self.clone(),
+        };
+
+        
+        // HCWT ROOT NODES
+        let root = Node {
+            cost: net_cost(&self.map_c2b, &netlevels[0], &self.edges, &self.bins),
+            selection: 0,
+        };
+        let mut roots = Vec::new();
+        roots.push(root);
+        // HCWT ROOT DECISION  (Placeholder)
+        let root_dec = Decision {
+            cells: Vec::new(),
+            mappings: Vec::new(),
+            closenets: Vec::new(),
+        };
+
+        let mut decs = Vec::new();
+        decs.push(root_dec);
+        let mut hcwt: HCwT<Context, Decision,Node> = HCwT::new(c, decs, roots);
+
+        // Now construct the levels        
+        level = 1;
+        
+        for layer in &layers {
+            let mut dx = hcwt.new_decision();
+            let mut decision = Decision {
+                cells: Vec::new(),
+                mappings: Vec::new(),
+                closenets: netlevels[level].clone(),
+            };
+            
+            println!("Strip at level: {}", level);
+            let mut orig_map = Vec::new();
+            for idx in layer {
+                // let idx = self.grid_index(x, y);
+                decision.cells.push(inverse_map[*idx]);
+                orig_map.push(*idx);
+                // println!("  Original mapping cell {} to bin {}", inverse_map[idx], idx);
+            }
+            let permlist = perms(orig_map.len() as u32, 100);
+            for p in &permlist {
+               //let p = &permlist.last().unwrap();
+                // println!("New mapping");
+                let mut new_map = Vec::new();
+                for i in &p.items {
+                    new_map.push(orig_map[*i]);
+                    // println!("  Bin {}", orig_map[*i]);
+                }
+                decision.mappings.push(new_map);
+            }
+
+            // Add options for each permutation            
+            hcwt.add_option(&mut dx, decision);
+            hcwt.add_decision(dx);
+
+            level = level + 1;
+        }
+
+
+
+        // let mut tmpgrid = c;
+        hcwt.solve(&mut share_c, &generate, &filter);
+
+
+        println!("Solved ----");
+        let last = &hcwt.levels.last().unwrap().nodes;
+        let level = hcwt.levels.len() - 1;
+        let mut best = 999999.0;
+        let mut best_node = &last[0];
+
+        let mut allnets = Vec::new();
+        for i in 0..self.edges.len() {
+            allnets.push(i);
+        }
+        for i in 0..last.len() {
+            let node = &last[i];
+            println!("----- SOLUTION {}----", i);
+            let mut mapping = self.map_c2b.clone();
+            trace(&hcwt, level, i, &mut mapping);
+            println!("---traced mapping----");
+            self.print(&mapping);
+
+            let nn_cost = net_cost(&mapping, &allnets, &self.edges, &hcwt.user_context.grid.bins);
+
+            if nn_cost < best {
+                best = nn_cost;
+            }
+            
+            
+            let temp = self.map_c2b.clone();
+            self.map_c2b = mapping;
+            self.print(&self.map_c2b);
+            println!("Allnet cost: {}", nn_cost);
+            println!("NODE incremental {}", node.detail.cost);
+
+
+            self.map_c2b = temp;
+        }
+
+        println!("Best cost: {}", best);
+
     }
 
+    pub fn opt_h2(&mut self, llx: usize, lly: usize, urx: usize, ury: usize ) {
+        let mut layers = Vec::new();
+        for x in llx..urx {
+            let mut layer = Vec::new();
+            for y in lly..ury {
+                layer.push(self.grid_index(x, y));
+            }
+            layers.push(layer);
+        }
+        self.opt_layers(layers, 1000);
+    }
     pub fn opt_h(&mut self, llx: usize, lly: usize, urx: usize, ury: usize) {
         
         println!("Optimize {} strips of {} tall", urx - llx, ury - lly);
 
         
-        let mut inverse_map = vec!(0 as usize; self.bins.len());
-        for i in 0..self.map_c2b.len() {
-            inverse_map[self.map_c2b[i]] = i;
-        }
+        let inverse_map = self.inverse(&self.map_c2b);
 
         let mut cellnet = Vec::new();
         for i in 0..self.bins.len() {
@@ -299,7 +488,7 @@ impl Grid {
         let mut level = 1;
         for x in llx..urx {
             for y in lly..ury {
-                let idx = self.gi(x, y);
+                let idx = self.grid_index(x, y);
                 // println!("MARK grid {} is cell {}  inverse (not {})", idx, inverse_map[idx], self.map_c2b[idx]);
                 let cell_id = inverse_map[idx];
                 for edge_id in &cellnet[cell_id]{
@@ -317,27 +506,29 @@ impl Grid {
             netlevels[highmark[eidx]].push(eidx);
         }
 
+        if self.debug {
         for i in 0..level {
             println!("Edges at level {}", i);
             for v in &netlevels[i] {
                 println!("Edge {}", v);
             }
         }
+        }
 
 
         // HCWT Root Context
         let mut c = Context {
             base_cost: 0.0,
-            mapping: self.map_c2b.clone(),
-            edges: self.edges.clone(),
-            bins: self.bins.clone(),
+            // mapping: self.map_c2b.clone(),
+            // edges: self.edges.clone(),
+            // bins: self.bins.clone(),
             grid: self.clone(),
         };
         let mut share_c = Context {
             base_cost: 0.0,
-            mapping: self.map_c2b.clone(),
-            edges: self.edges.clone(),
-            bins: self.bins.clone(),
+            // mapping: self.map_c2b.clone(),
+            // edges: self.edges.clone(),
+            // bins: self.bins.clone(),
             grid: self.clone(),
         };
         // HCWT ROOT NODES
@@ -370,7 +561,7 @@ impl Grid {
             println!("Strip at X: {}", x);
             let mut orig_map = Vec::new();
             for y in lly..ury {
-                let idx = self.gi(x, y);
+                let idx = self.grid_index(x, y);
                 decision.cells.push(inverse_map[idx]);
                 orig_map.push(idx);
                 // println!("  Original mapping cell {} to bin {}", inverse_map[idx], idx);
@@ -418,7 +609,7 @@ impl Grid {
             println!("---traced mapping----");
             self.print(&mapping);
 
-            let nn_cost = net_cost(&mapping, &allnets, &self.edges, &hcwt.user_context.bins);
+            let nn_cost = net_cost(&mapping, &allnets, &self.edges, &hcwt.user_context.grid.bins);
 
             if nn_cost < best {
                 best = nn_cost;
@@ -493,20 +684,20 @@ fn generate(hcwt: &HCwT<Context,Decision,Node>, context: &mut Context, level: us
     // Set up the mapping for the prior levels
     // let mut tmpmap = hcwt.user_context.mapping.clone();
     // trace(hcwt, level - 1, parent_node_index, &mut tmpmap);
-    trace(hcwt, level - 1, parent_node_index, &mut context.mapping);
+    trace(hcwt, level - 1, parent_node_index, &mut context.grid.map_c2b);
 
     let d = &hcwt.levels[level].decisions[0];
     for mi in 0..detail.mappings.len() {
         for i in 0..detail.cells.len() {
             // println!("Generate map cell {} to bin {}", detail.cells[i], detail.mappings[mi][i]);
             // tmpmap[d.cells[i]] = d.mappings[mi][i];
-            context.mapping[d.cells[i]] = d.mappings[mi][i];
+            context.grid.map_c2b[d.cells[i]] = d.mappings[mi][i];
         }
 
         let mut new_node = parent_node.detail;
         new_node.selection = mi;
         // let incremental = net_cost(&tmpmap, &d.closenets, &hcwt.user_context.edges, &hcwt.user_context.bins);
-        let incremental = net_cost(&context.mapping, &d.closenets, &context.edges, &context.bins);
+        let incremental = net_cost(&context.grid.map_c2b, &d.closenets, &context.grid.edges, &context.grid.bins);
         // if incremental != inc2 {
         //    println!("ERROR!  Mismatch on incremental!");
         // }
@@ -519,26 +710,28 @@ fn generate(hcwt: &HCwT<Context,Decision,Node>, context: &mut Context, level: us
 
 fn filter(hcwt: &HCwT<Context,Decision,Node>, context: &mut Context, level: usize, nodes: &mut Vec<SelectionNode<Node>>) -> Vec<SelectionNode<Node>>
 {
+    /*
     let mut result = nodes.clone();
     result.sort_by_key({|a| a.detail.cost as i32});
     result.truncate(100);
 
-
+    result
+    */
+    nodes.sort_by_key({|a| a.detail.cost as i32});
+    nodes.truncate(100);
+    let result = nodes.clone();
 
     result
 }
 
 struct Context {
     base_cost: f32,
-    mapping: Vec<usize>,
-    edges: Vec<Edge>,
-    bins: Vec<Bin>,
     grid: Grid,
 }
 struct Decision {
-    cells: Vec<usize>,
-    mappings: Vec<Vec<usize>>,
-    closenets: Vec<usize>,
+    cells: Vec<usize>,  // Cells that are reassigned
+    mappings: Vec<Vec<usize>>, // The bins they may go to 
+    closenets: Vec<usize>, // Nets that complete at this level
 }
 
 #[derive(Copy, Clone)]
@@ -567,12 +760,14 @@ pub fn grid_test() {
     
     println!("Grid: ");
     g.print(&g.map_c2b);
+
+    // Scramble the bin assignments
     g.scramble(1, 1, xdim - 1, ydim - 1);
     g.print(&g.map_c2b);
 
-    // Scramble the bin assignments
+
 
     // Generate the HCwT -- horizontal layers.
-    g.opt_h(1, 1, xdim - 1, ydim - 1);
+    g.opt_h2(1, 1, xdim - 1, ydim - 1);
 
 }

@@ -81,9 +81,9 @@ pub struct HCwT<UserContext,DecisionDetail,NodeDetail> {
 // Create the solver, and we provide a struct
 // that gives additional information to the cost function.
 impl <UserContext,DecisionDetail,NodeDetail> HCwT<UserContext,DecisionDetail,NodeDetail> {
-    pub fn new(user_context: UserContext, decisions: Vec<DecisionDetail>, roots: Vec<NodeDetail>) -> HCwT<UserContext,DecisionDetail,NodeDetail> {
+    pub fn new(context: UserContext, decisions: Vec<DecisionDetail>, roots: Vec<NodeDetail>) -> HCwT<UserContext,DecisionDetail,NodeDetail> {
         let mut hc = HCwT {
-            user_context,
+            user_context: context,
             levels: Vec::new(),
             debug: 0,
         };
