@@ -108,6 +108,9 @@ impl <UserContext,DecisionDetail,NodeDetail> HCwT<UserContext,DecisionDetail,Nod
     // Generate gets the HCWT struct, the level, and the parent decision index, and the parent node index.  From that,
     // it can get all the info needed to potentially generate new nodes.  Simplifies the
     // signature.
+    //
+    //  generate(&hcwt, level, decision_index, parent_node_index, new_list);
+    //  filter(&hcwt, level, list) -> filtered_list
     pub fn solve(&mut self,
                  generate: &dyn Fn(&HCwT<UserContext,DecisionDetail,NodeDetail>, usize, usize, usize, &mut Vec<SelectionNode<NodeDetail>>),
                  filter: &dyn Fn(&HCwT<UserContext,DecisionDetail,NodeDetail>, usize, &mut Vec<SelectionNode<NodeDetail>>) -> Vec<SelectionNode<NodeDetail>>)

@@ -40,3 +40,39 @@ where I can generate a grid of arbitrary size, and
 add mesh connections.  HPWL calculations look OK.
 
 Will build the HCwT solver for it tomorrow.
+
+### 20241123
+
+Have the grid HCwT mostly running.  Need to make sure
+the nodes and decision levels sync up -- might have
+some sort of off-by-one issue?  The root node is
+on a level without any decision, so the index of
+the decision should be off by 1 from the index of
+the solution tree layers.  Got to be a cleaner way
+to do that.  Maybe have an empty decision level,
+that gets inserted?  Ghost level?  Then the tree
+level would match exactly the decision level, and
+level zero would be a special case.
+
+Yeah, that's probably the way to go.  More grief
+otherwise.
+
+----
+
+Hack under way.  Will merge the nodes within the
+decision struct, and get rid of the separate solution
+tree.  No need for the HCwT Layer.  And should change
+to Hcwt, maybe?
+
+Each decision may have an implicit choice (ferry loading),
+or a set of explicity choices (a vector of options).   Which
+way you go depends on what makes sense for the particular
+problem.
+
+For things like patient scheduling -- we can have one
+HWcT generate assignments of patients to rooms, and
+then feed the selected options from that as roots for
+a different HCwT solver that focuses on assignment of
+nurses.  After that, the resulting selected options
+get fed to an equipment allocator.  Or something like
+that.
