@@ -192,3 +192,7 @@ and see how things go.  The macro blocks make stuff
 harder, so push that off.
 
 Integration with fsdc_r, that's on the plate for today.
+
+Legalization/bin assignment could also be done with
+dual row.  But fight that battle another day.
+

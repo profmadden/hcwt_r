@@ -873,8 +873,8 @@ pub fn grid_test_hv()
 }
 
 pub fn grid_test_analytic() {
-    let xdim = 8;
-    let ydim = 8;
+    let xdim = 18;
+    let ydim = 18;
 
     let mut g = Grid::new(xdim, ydim);
     for x in 0..xdim {
@@ -901,7 +901,7 @@ pub fn grid_test_analytic() {
         urx: xdim - 1,
         ury: ydim - 1, 
     };
-    g.grid_analytic(limits, 0.4, 50);
+    g.grid_analytic(limits, 0.3, 500);
 
 }
 
