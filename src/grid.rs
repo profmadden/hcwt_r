@@ -90,6 +90,23 @@ pub struct Permlist {
     pub items: Vec<usize>,
 }
 
+#[derive(Copy, Clone)]
+pub struct ScanLimits {
+    pub llx: usize,
+    pub lly: usize,
+    pub urx: usize,
+    pub ury: usize,
+}
+#[derive(Copy, Clone)]
+pub struct ScanWindow {
+    pub width: usize,
+    pub height: usize,
+}
+#[derive(Copy, Clone)]
+pub struct ScanStep {
+    pub dx: usize,
+    pub dy: usize,
+}
 
 pub fn gen_permutation(items: &Vec<usize>, taken: &mut Vec<bool>, decided: &mut Vec<usize>, delta: u32, max_delta: u32, order: &mut Vec<Permlist>) {
     if delta > max_delta {
@@ -281,6 +298,21 @@ impl Grid {
         }        
     }
 
+    pub fn cell_net(&self) -> Vec<Vec<usize>> {
+        let mut cellnet = Vec::new();
+        for i in 0..self.bins.len() {
+            cellnet.push(Vec::new());
+        }
+        for i in 0..self.edges.len() {
+            let e = &self.edges[i];
+            cellnet[e.a].push(i);
+            cellnet[e.b].push(i);
+            // println!("Edge {}  connects {} to {}", i, e.a, e.b);
+        }
+
+        cellnet
+    }
+
     // opt_layers takes in a series of bin IDs, arranged in layers.
     // Used with the grid code, cell maping of cells to bins, and use
     // an inverse map to determine which bin contains a cell.
@@ -290,7 +322,7 @@ impl Grid {
     //
     // Moving code out of the original opt_h, to make it generic, and
     // able to be reused in a bunch of spots.
-    pub fn opt_layers(&mut self, layers: Vec<Vec<usize>>, delta: u32) {
+    pub fn opt_layers(&mut self, layers: Vec<Vec<usize>>, delta: u32) -> (f32, Vec<usize>) {
         println!("Optimize {} layers, delta {}", layers.len(), delta);
 
 
@@ -383,7 +415,7 @@ impl Grid {
                 closenets: netlevels[level].clone(),
             };
             
-            println!("Strip at level: {}", level);
+            // println!("Strip at level: {}", level);
             let mut orig_map = Vec::new();
             for idx in layer {
                 // let idx = self.grid_index(x, y);
@@ -416,46 +448,56 @@ impl Grid {
         hcwt.solve(&mut share_c, &generate, &filter);
 
 
-        println!("Solved ----");
+        // println!("Solved ----");
+        let mut all_nets = Vec::new();
+        for i in 0..self.edges.len() {
+            all_nets.push(i);
+        }
+
         let last = &hcwt.levels.last().unwrap().nodes;
         let level = hcwt.levels.len() - 1;
-        let mut best = 999999.0;
-        let mut best_node = &last[0];
+        let mut best = net_cost(&self.map_c2b, &all_nets, &self.edges, &self.bins);
+        let mut best_mapping = self.map_c2b.clone();
+        let mut mapping = self.map_c2b.clone();
 
-        let mut allnets = Vec::new();
-        for i in 0..self.edges.len() {
-            allnets.push(i);
-        }
         for i in 0..last.len() {
             let node = &last[i];
-            println!("----- SOLUTION {}----", i);
-            let mut mapping = self.map_c2b.clone();
+            // println!("----- SOLUTION {}----", i);
+
             trace(&hcwt, level, i, &mut mapping);
-            println!("---traced mapping----");
-            self.print(&mapping);
+            // println!("---traced mapping----");
+            // self.print(&mapping);
 
-            let nn_cost = net_cost(&mapping, &allnets, &self.edges, &hcwt.user_context.grid.bins);
+            let nn_cost = net_cost(&mapping,  &all_nets, &self.edges, &hcwt.user_context.grid.bins);
 
-            if nn_cost < best {
+            if nn_cost <= best {
                 best = nn_cost;
+                best_mapping = mapping.clone();
             }
-            
-            
-            let temp = self.map_c2b.clone();
-            self.map_c2b = mapping;
-            self.print(&self.map_c2b);
-            println!("Allnet cost: {}", nn_cost);
-            println!("NODE incremental {}", node.detail.cost);
-
-
-            self.map_c2b = temp;
         }
 
         println!("Best cost: {}", best);
+        
+        (best, best_mapping)
 
     }
 
-    pub fn opt_h(&mut self, llx: usize, lly: usize, urx: usize, ury: usize ) {
+    pub fn opt_bi_layers(&mut self, layers: Vec<Vec<usize>>, delta: u32) -> (f32, Vec<usize>) {
+        let mut reverse = layers.clone();
+        reverse.reverse();
+
+        let mut best_cost = self.grid_cost(&self.map_c2b);
+        let (cost, map) = self.opt_layers(layers, delta);
+        println!("Forward direction cost: {}", cost);
+        self.map_c2b = map;
+        let (cost, map) = self.opt_layers(reverse, delta);
+        println!("After reverse, cost {}", cost);
+
+        (cost, map)
+    }
+
+    // Strips are vertical stacks, we move horizontally
+    pub fn opt_h(&mut self, llx: usize, lly: usize, urx: usize, ury: usize ) -> (f32, Vec<usize>) {
         let mut layers = Vec::new();
         for x in llx..urx {
             let mut layer = Vec::new();
@@ -464,10 +506,12 @@ impl Grid {
             }
             layers.push(layer);
         }
-        self.opt_layers(layers, 1000);
+
+        self.opt_bi_layers(layers, 1000)
     }
 
-    pub fn opt_v(&mut self, llx: usize, lly: usize, urx: usize, ury: usize ) {
+    // Strips are horizontal stacks, we move vertically
+    pub fn opt_v(&mut self, llx: usize, lly: usize, urx: usize, ury: usize ) -> (f32, Vec<usize>) {
         let mut layers = Vec::new();
         for y in lly..ury {        
             let mut layer = Vec::new();
@@ -476,13 +520,192 @@ impl Grid {
             }
             layers.push(layer);
         }
-        self.opt_layers(layers, 1000);
 
+        self.opt_bi_layers(layers, 100)
+    }
+
+    
+    pub fn opt_mxn(&mut self, limits: ScanLimits, window: ScanWindow, m: usize, n: usize) -> (f32, Vec<usize>) {
+        let mut layers = Vec::new();
+        let mut x = limits.llx;
+        let mut y = limits.lly;
+        let mut best_cost = self.grid_cost(&self.map_c2b);
+        
+        while (x < limits.urx)
+        {
+            y = limits.lly;
+            while (y < limits.ury)
+            {
+                let mut urx = limits.urx.min(x + m);
+                let mut ury = limits.ury.min(y + n);
+
+                
+                let mut layer = Vec::new();
+                for gx in x..urx {
+                    for gy in y..ury {
+                        layer.push(self.grid_index(gx, gy));
+                    }
+                }
+                println!("mxn layer {} {}   {} {}  with {} bins", x, y, urx, ury, layer.len());
+                layers.push(layer);
+                y = y + n;
+            }
+            x = x + m;
+        }
+
+        self.opt_layers(layers, 1000)
 
     }
     
 
+    // Horizontal -- limit the Y axis, can span the space horizontally
+    // Vertical -- limit the X axis, can span the space vertically
+    pub fn opt_scan(&mut self, limits: ScanLimits, window: ScanWindow, step: ScanStep, horizontal: bool) -> (f32, Vec<usize>) {
+        let mut x = limits.llx;
+        let mut y = limits.lly;
+        let mut best_cost = 999999.0;
+        let mut mapping = Vec::new();
+        while x < limits.urx
+        {
+            y = limits.lly;
+            while y < limits.ury
+            {
+                let mut urx = limits.urx.min(x + window.width);
+                let mut ury = limits.ury.min(y + window.height);
+
+                println!("Opt window {} {}   {} {} h: {}", x, y, urx, ury, horizontal);
+
+                y = y + step.dy;
+                let cost;
+                let map;
+                if horizontal {
+                    (cost, map) = self.opt_h(x, y, urx, ury);
+                } else {
+                    (cost, map) = self.opt_v(x, y, urx, ury);
+                }
+                println!("Cost: {}", cost);
+                if cost <= best_cost {
+                    best_cost = cost;
+                    mapping = map.clone();
+                }
+                self.map_c2b = map;
+            }
+            x = x + step.dx;
+        }
+
+        println!("Final cost: {}", best_cost);
+
+        (best_cost, mapping)
+    }
+
+    pub fn grid_analytic(&mut self, limits: ScanLimits, alpha: f32, steps: u32) {
+        // Run through and find the cells that are within this window.
+        let inverse_map = self.inverse(&self.map_c2b);
+        let mut cells = Vec::new();
+
+        for x in limits.llx..limits.urx {
+            for y in limits.lly..limits.ury {
+                cells.push(inverse_map[self.grid_index(x, y)]);
+            }
+        }
+        println!("{} cells being operated on by analytic engine", cells.len());
+
+        // Initialize cell locations
+        let mut locations = Vec::new();
+        for c in 0..self.map_c2b.len() {
+            let bin = self.map_c2b[c];
+            let x = self.bins[bin].x * 50.0;
+            let y = self.bins[bin].y * 50.0;
+            let mut pos = Vec::new();
+            pos.push((x, y));
+            locations.push(CellPosition{
+                    x: x,
+                    y: y,
+                    history: pos,
+            });
+        }
+        // Initial net centers
+
+        let cellnet = self.cell_net();
+        for step in 0..steps {
+            println!("ITERATION {}", step);
+            let mut net_center = Vec::new();
+            for i in 0..self.edges.len() {
+                let ca = &locations[self.edges[i].a];
+                let cb = &locations[self.edges[i].b];
+                let cx = (ca.x + cb.x)/2.0;
+                let cy = (ca.y + cb.y)/2.0;
+                net_center.push(EdgeCenter{
+                    x: cx,
+                    y: cy,
+                });
+                println!("Edge {} links cells {} to {}, center {} {}", i, self.edges[i].a, self.edges[i].b, cx, cy);
+            }
+        
+            for c in &cells {
+                let mut x = 0.0;
+                let mut y = 0.0;
+                let mut weight = 0.0;
+                for edge_id in &cellnet[*c] {
+                    x = x + net_center[*edge_id].x;
+                    y = y + net_center[*edge_id].y;
+                    weight = weight + 1.0;
+                }
+                if weight > 0.0 {
+                    x = x / weight;
+                    y = y / weight;
+                }
+                let dx = x - locations[*c].x;
+                let dy = y - locations[*c].y;
+                let newx = locations[*c].x + alpha * dx;
+                let newy = locations[*c].y + alpha * dy;
+                println!("Move cell {} from {} {} to {} {}", c, locations[*c].x, locations[*c].y, newx, newy);
+                locations[*c].x = newx;
+                locations[*c].y = newy;
+                locations[*c].history.push((newx,newy));
+            }
+        }
+        let mut pst = pstools_r::PSTool::new();
+        pst.add_color(0.1, 0.1, 0.1, 1.0);
+        for c in &cells {
+            pst.add_box(locations[*c].x - 5.0, locations[*c].y - 5.0, locations[*c].x + 5.0, locations[*c].y + 5.0);
+
+        }
+        pst.add_color(1.0, 0.0, 0.0, 1.0);
+        println!("FINAL MOTION");
+        for c in &cells {
+            println!("CELL {} pos: {} {}", *c, locations[*c].x, locations[*c].y);
+            let mut px = 0.0;
+            let mut py = 0.0;
+            let mut first = true;
+            for pos in &locations[*c].history {
+                // println!("  {} {}", pos.0, pos.1);
+                if !first {
+                    pst.add_line(px, py, pos.0, pos.1);
+                }
+                px = pos.0;
+                py = pos.1;
+                first = false;
+            }
+        }
+        pst.generate("analytic.ps".to_string());
+
+        // Now repeatedly move cells some percentage of the distance
+    }
+    
+
 }
+
+pub struct CellPosition {
+    pub x: f32,
+    pub y: f32,
+    pub history: Vec<(f32,f32)>,
+}
+pub struct EdgeCenter {
+    pub x: f32,
+    pub y: f32,
+}
+
 
 pub fn net_cost(mapping:&Vec<usize>, nets:&Vec<usize>, edges: &Vec<Edge>, bins:&Vec<Bin>) -> f32   {
     let mut total = 0.0;
@@ -592,11 +815,99 @@ struct Node {
     selection: usize,
 }
 
-pub fn grid_test() {
-    let mut bb = pstools_r::bbox::BBox::new();
-    bb.addpoint(3.0, 4.0);
+
+pub fn grid_test_hv()
+{
     let xdim = 8;
     let ydim = 5;
+
+    let mut g = Grid::new(xdim, ydim);
+    for x in 0..xdim {
+        for y in 0..(ydim - 1) {
+            g.add_edge(x, y, x, y + 1, 1.0);
+        }
+    }
+    for y in 0..ydim {
+        for x in 0..(xdim - 1) {
+            g.add_edge(x, y, x + 1, y, 1.0);
+        }
+    }
+
+    println!("Grid: ");
+    g.print(&g.map_c2b);
+
+    // Scramble the bin assignments
+    g.scramble(1, 1, xdim - 1, ydim - 1);
+    g.print(&g.map_c2b);
+    
+    let (c, map) = g.opt_v(1, 1, xdim - 1, ydim - 1);
+    g.print(&map);
+    g.map_c2b = map;
+    let (c, map) = g.opt_h(1, 1, xdim - 1, ydim - 1);
+    g.print(&map);
+    g.map_c2b = map;
+    let (c, map) = g.opt_v(1, 1, xdim - 1, ydim - 1);
+    g.print(&map);
+    g.map_c2b = map;    
+    let (c, map) = g.opt_h(1, 1, xdim - 1, ydim - 1);
+    g.print(&map);
+    g.map_c2b = map;        
+    let (c, map) = g.opt_v(1, 1, xdim - 1, ydim - 1);
+    g.print(&map);
+    g.map_c2b = map;    
+    let (c, map) = g.opt_h(1, 1, xdim - 1, ydim - 1);
+    g.print(&map);
+    g.map_c2b = map;            
+    let (c, map) = g.opt_v(1, 1, xdim - 1, ydim - 1);
+    g.print(&map);
+    g.map_c2b = map;    
+    let (c, map) = g.opt_h(1, 1, xdim - 1, ydim - 1);
+    g.print(&map);
+    g.map_c2b = map;        
+    let (c, map) = g.opt_v(1, 1, xdim - 1, ydim - 1);
+    g.print(&map);
+    g.map_c2b = map;    
+    let (c, map) = g.opt_h(1, 1, xdim - 1, ydim - 1);
+    g.print(&map);
+    g.map_c2b = map;        
+}
+
+pub fn grid_test_analytic() {
+    let xdim = 8;
+    let ydim = 8;
+
+    let mut g = Grid::new(xdim, ydim);
+    for x in 0..xdim {
+        for y in 0..(ydim - 1) {
+            g.add_edge(x, y, x, y + 1, 1.0);
+        }
+    }
+    for y in 0..ydim {
+        for x in 0..(xdim - 1) {
+            g.add_edge(x, y, x + 1, y, 1.0);
+        }
+    }
+    
+    println!("Grid: ");
+    g.print(&g.map_c2b);
+    // Scramble the bin assignments
+    g.scramble(1, 1, xdim - 1, ydim - 1);
+    g.print(&g.map_c2b);
+
+
+    let limits = ScanLimits{
+        llx: 1,
+        lly: 1,
+        urx: xdim - 1,
+        ury: ydim - 1, 
+    };
+    g.grid_analytic(limits, 0.4, 50);
+
+}
+
+pub fn grid_test_scan() {
+    let xdim = 8;
+    let ydim = 8;
 
     let mut g = Grid::new(xdim, ydim);
     for x in 0..xdim {
@@ -617,9 +928,39 @@ pub fn grid_test() {
     g.scramble(1, 1, xdim - 1, ydim - 1);
     g.print(&g.map_c2b);
 
+    let lim = ScanLimits{
+        llx: 1,
+        lly: 1,
+        urx: 7,
+        ury: 7,
+    };
+    let window_h = ScanWindow{
+        width: 8,
+        height: 4,
+    };
+    let step = ScanStep {
+        dx: 2,
+        dy: 2,
+    };
+    let window_v = ScanWindow {
+        width: 4,
+        height: 8,
+    };
+    g.opt_scan(lim, window_v, step, true);
+    g.print(&g.map_c2b);
 
+    g.opt_scan(lim, window_h, step, false);
+    g.print(&g.map_c2b);
 
-    // Generate the HCwT -- horizontal layers.
-    g.opt_h(1, 1, xdim - 1, ydim - 1);
+    g.opt_scan(lim, window_v, step, true);
+    g.print(&g.map_c2b);
 
+    g.opt_scan(lim, window_h, step, false);
+    g.print(&g.map_c2b);    
+
+}
+
+pub fn grid_test () {
+    // grid_test_hv();
+    grid_test_analytic();
 }

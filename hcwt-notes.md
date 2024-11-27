@@ -76,3 +76,119 @@ a different HCwT solver that focuses on assignment of
 nurses.  After that, the resulting selected options
 get fed to an equipment allocator.  Or something like
 that.
+
+### 20241125
+
+Got the incremental costs working, which lets me
+prune the solution space.  In a 8x5 grid, where there
+are three cells stacked vertically, in 6 strips,
+thats 6^6 combinations, 46,656.  The best rearrangement
+goes down to 183.  With a limit of 100 live branches,
+I get the same result.  This pruning works.  Big
+window, lot of freedom of movement, and we get the
+good answers in the blink of an eye.
+
+Need to clean up the code, put the upper limit for
+pruning into the context, and figure out how to
+sort on floating point number.  Ordered Float, right?
+
+### 20241126
+
+Woot.  Have the generic optimization of layers
+(handing in a vector of vectors of bin numbers),
+and I'm getting the same results with the horizontal
+reshuffle.  Should be a trivial hack to change this
+to vertical strips, and then a window-in-window scan.
+
+Rust is pretty freakin' cool.
+
+### 20241127
+
+Got the scanner going -- but bottoming out pretty
+quickly.  Need to have a decent starting point if there's
+going to be progress.  If everything is random jumble,
+then everything has pretty much no gain going in any
+particular direction.
+
+Will build grid_analytic, that takes a window, and then
+runs a simple analytic engine.  Each net has a center
+of mass (the halfway point), and then each cell has
+a target destination.  Move the cell towards the target by
+some epsilon amount.
+
+Keep doing that, then snap things in place by sorting by
+X into layers, and then assigning back to the grid.
+
+Any net that touches a fixed resource gets double weight,
+or something like that.
+
+Right now, on an 8x8 grid scramble, optimal is 112, scramble
+gets 390, and then two scans in alternate directions
+brings it down to 328.
+
+----
+If we start with a random placement, only small local
+changes are going to do anything.  Have to have a not
+totally trash start, and then maybe we're not stuck
+on a plateau, but instead have an incline we can
+stumble down (with large window optimization getting
+us over small bumps).
+
+Add a grid rotate?  Groups of 4, have things be able
+to turn?  Or all 24 permutations of the space.
+
+The challenge with placement is that the optimal location
+of any cell depends on the locations of other cells
+that are connected to it.  If the other cells are
+in bad locations, the cell in question is stuck... in
+a bad location.  Lots of stable, low quality local
+minima, and placers can get wedged into them.  The trick
+is to get the majority of cells into good locations,
+so that we're on the side of a slope that descends into
+a good local optima (and not a bad local optima).
+Being able to get over small bumps in the cost surface
+aids in getting to the best local optima in a valley.
+
+With the big scramble, seem to be stuck in a bad
+local optima.  Will try the 2x2 layering, see what happens.
+
+---
+Should also have a single-layer, where we try all permutations
+of a group of bins.  Brute force enumeration, but could
+do a 3x3 window, with 9! = 362,880.  Expensive, but might
+get out of a local minima.  The optimizations are in some
+sense a jump out of a local minima to another spot in
+the cost surface.  The 2x2 is only 24 combinations.
+
+Instead of 2x2 specifically, maybe allow permutations of
+m x n?  Then do a strip m or n wide, stacking them up
+in layers.  All permutations in that m x n level, and
+then the next layer does the HCwT pruning.
+
+Also should add a postscript generator, to show
+how cells have moved between start and finish.
+Pack trail sort of thing.  Good time to work on
+pstools_r.
+
+----
+
+Analytic seems to be doing the right thing on grids;
+quickly converges to uniformly spaced cells from the
+mesh.  Niiiiice.  Also have integration with the
+PostScript generator, and the plots show the motion
+of the cells across iterations.  Might want to break
+things out to a separate analytic engine.
+
+Need to add some code to convert the analytic placement
+results back into bin assignments.  I'll have a
+rectangle of bins to assign to, and all the cells with
+XY coords.  Split things recursively, in either the
+H or V direction, and then assign some of the cells to
+one side or the other, recursively.  Recursion stops
+when there's only one cell, and one bin.
+
+I should pull in the old IBM01 standard cell benchmark,
+and see how things go.  The macro blocks make stuff
+harder, so push that off.
+
+Integration with fsdc_r, that's on the plate for today.
