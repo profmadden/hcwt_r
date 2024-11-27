@@ -455,7 +455,7 @@ impl Grid {
 
     }
 
-    pub fn opt_h2(&mut self, llx: usize, lly: usize, urx: usize, ury: usize ) {
+    pub fn opt_h(&mut self, llx: usize, lly: usize, urx: usize, ury: usize ) {
         let mut layers = Vec::new();
         for x in llx..urx {
             let mut layer = Vec::new();
@@ -466,169 +466,21 @@ impl Grid {
         }
         self.opt_layers(layers, 1000);
     }
-    pub fn opt_h(&mut self, llx: usize, lly: usize, urx: usize, ury: usize) {
-        
-        println!("Optimize {} strips of {} tall", urx - llx, ury - lly);
 
-        
-        let inverse_map = self.inverse(&self.map_c2b);
-
-        let mut cellnet = Vec::new();
-        for i in 0..self.bins.len() {
-            cellnet.push(Vec::new());
-        }
-        for i in 0..self.edges.len() {
-            let e = &self.edges[i];
-            cellnet[e.a].push(i);
-            cellnet[e.b].push(i);
-            // println!("Edge {}  connects {} to {}", i, e.a, e.b);
-        }
-        let mut highmark = vec![0; self.edges.len()];
-        // Now determine the last level any paricular edge is touched at
-        let mut level = 1;
-        for x in llx..urx {
-            for y in lly..ury {
-                let idx = self.grid_index(x, y);
-                // println!("MARK grid {} is cell {}  inverse (not {})", idx, inverse_map[idx], self.map_c2b[idx]);
-                let cell_id = inverse_map[idx];
-                for edge_id in &cellnet[cell_id]{
-                    highmark[*edge_id] = level;
-                    // println!("     edge {}  connect {} {}  at level {}", edge_id, self.edges[*edge_id].a, self.edges[*edge_id].b, level);
-                }
+    pub fn opt_v(&mut self, llx: usize, lly: usize, urx: usize, ury: usize ) {
+        let mut layers = Vec::new();
+        for y in lly..ury {        
+            let mut layer = Vec::new();
+            for x in llx..urx {
+                layer.push(self.grid_index(x, y));
             }
-            level = level + 1;
-        }        
-
-        // Group the edges by levels -- level 0 is precomputed,
-        // otherwise it gets attached to the level where the last coord is set.
-        let mut netlevels: Vec<Vec<usize>> = vec![Vec::new(); level];
-        for eidx in 0..self.edges.len() {
-            netlevels[highmark[eidx]].push(eidx);
+            layers.push(layer);
         }
+        self.opt_layers(layers, 1000);
 
-        if self.debug {
-        for i in 0..level {
-            println!("Edges at level {}", i);
-            for v in &netlevels[i] {
-                println!("Edge {}", v);
-            }
-        }
-        }
-
-
-        // HCWT Root Context
-        let mut c = Context {
-            base_cost: 0.0,
-            // mapping: self.map_c2b.clone(),
-            // edges: self.edges.clone(),
-            // bins: self.bins.clone(),
-            grid: self.clone(),
-        };
-        let mut share_c = Context {
-            base_cost: 0.0,
-            // mapping: self.map_c2b.clone(),
-            // edges: self.edges.clone(),
-            // bins: self.bins.clone(),
-            grid: self.clone(),
-        };
-        // HCWT ROOT NODES
-        let root = Node {
-            cost: net_cost(&self.map_c2b, &netlevels[0], &self.edges, &self.bins),
-            selection: 0,
-        };
-        let mut roots = Vec::new();
-        roots.push(root);
-        // HCWT ROOT DECISION  (Placeholder)
-        let root_dec = Decision {
-            cells: Vec::new(),
-            mappings: Vec::new(),
-            closenets: Vec::new(),
-        };
-        let mut decs = Vec::new();
-        decs.push(root_dec);
-        let mut hcwt: HCwT<Context,Decision,Node> = HCwT::new(c, decs, roots);
-
-        // Now construct the levels        
-        level = 1;
-        for x in llx..urx {
-            let mut dx = hcwt.new_decision();
-            let mut decision = Decision {
-                cells: Vec::new(),
-                mappings: Vec::new(),
-                closenets: netlevels[level].clone(),
-            };
-            level = level + 1;
-            println!("Strip at X: {}", x);
-            let mut orig_map = Vec::new();
-            for y in lly..ury {
-                let idx = self.grid_index(x, y);
-                decision.cells.push(inverse_map[idx]);
-                orig_map.push(idx);
-                // println!("  Original mapping cell {} to bin {}", inverse_map[idx], idx);
-            }
-            let permlist = perms(orig_map.len() as u32, 100);
-            for p in &permlist {
-               //let p = &permlist.last().unwrap();
-                // println!("New mapping");
-                let mut new_map = Vec::new();
-                for i in &p.items {
-                    new_map.push(orig_map[*i]);
-                    // println!("  Bin {}", orig_map[*i]);
-                }
-                decision.mappings.push(new_map);
-            }
-
-
-            // Add options for each permutation            
-            hcwt.add_option(&mut dx, decision);
-            hcwt.add_decision(dx);
-
-
-        }
-
-       
-        // let mut tmpgrid = c;
-        hcwt.solve(&mut share_c, &generate, &filter);
-
-
-        println!("Solved ----");
-        let last = &hcwt.levels.last().unwrap().nodes;
-        let level = hcwt.levels.len() - 1;
-        let mut best = 999999.0;
-        let mut best_node = &last[0];
-
-        let mut allnets = Vec::new();
-        for i in 0..self.edges.len() {
-            allnets.push(i);
-        }
-        for i in 0..last.len() {
-            let node = &last[i];
-            println!("----- SOLUTION {}----", i);
-            let mut mapping = self.map_c2b.clone();
-            trace(&hcwt, level, i, &mut mapping);
-            println!("---traced mapping----");
-            self.print(&mapping);
-
-            let nn_cost = net_cost(&mapping, &allnets, &self.edges, &hcwt.user_context.grid.bins);
-
-            if nn_cost < best {
-                best = nn_cost;
-            }
-            
-            
-            let temp = self.map_c2b.clone();
-            self.map_c2b = mapping;
-            self.print(&self.map_c2b);
-            println!("Allnet cost: {}", nn_cost);
-            println!("NODE incremental {}", node.detail.cost);
-
-
-            self.map_c2b = temp;
-        }
-
-        println!("Best cost: {}", best);
 
     }
+    
 
 }
 
@@ -768,6 +620,6 @@ pub fn grid_test() {
 
 
     // Generate the HCwT -- horizontal layers.
-    g.opt_h2(1, 1, xdim - 1, ydim - 1);
+    g.opt_h(1, 1, xdim - 1, ydim - 1);
 
 }
