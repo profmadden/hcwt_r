@@ -4,5 +4,5 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-pstools_r = { path = "libs/pstools_r" }
+pstools_r = {git = "https://github.com/profmadden/pstools_r"}
 rand = "0.8.5"
