@@ -56,7 +56,7 @@
 // Ignore the parent link in any node at level 0.
 
 use pstools_r;
-mod grid;
+pub mod grid;
 
 #[derive(Clone, Copy)]
 pub struct SelectionNode<NodeDetail> {

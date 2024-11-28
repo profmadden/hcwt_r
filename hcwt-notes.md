@@ -196,3 +196,10 @@ Integration with fsdc_r, that's on the plate for today.
 Legalization/bin assignment could also be done with
 dual row.  But fight that battle another day.
 
+### 20241128
+
+Renamed cells to modules -- so the grid operates
+on modules.  Should make the code a little more
+clear and less debug-challenging when integrating
+with the standard cell/mixed-size placer.
+

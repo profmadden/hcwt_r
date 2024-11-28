@@ -11,18 +11,18 @@ use std::sync::Arc;
 //
 // We have permutations that pick the items in each row or
 // column, as a series of decision for the HCwT engine.
-// Generate permutations, where each cell gets mapped to
+// Generate permutations, where each module gets mapped to
 // a different bin, and on each level, we have a list of
 // point-to-point connections to add to a running total.
 //
-// Cells come in with initial bin assignments (and we have
+// modules come in with initial bin assignments (and we have
 // a total cost for the entire solution).  Build the
-// HCWT, run a pass, and then reassign the cells to different
+// HCWT, run a pass, and then reassign the modules to different
 // bins.
 //
 // A pass over the grid would have direction (X or Y),
 // potentially an ordering of left-to-right or right-to-left,
-// The width of each layer (might do 6 cells in a 8-wide grid),
+// The width of each layer (might do 6 modules in a 8-wide grid),
 // a step size if there's overlap, and a delta on allowed
 // permutations.
 //
@@ -38,12 +38,12 @@ use std::sync::Arc;
 // grid number, the coordinate, and the XY spot to map to.
 //
 // When calculating the cost of a connection, it
-// will either be from a cell that gets fixed in the
-// current level, to either a cell in a prior level,
-// or to a cell in a propagated bin.
+// will either be from a module that gets fixed in the
+// current level, to either a module in a prior level,
+// or to a module in a propagated bin.
 // Make two lists of connections that get computed at each
 // level -- and then scan accordingly.
-// There's the cost of the cells at this level to the
+// There's the cost of the modules at this level to the
 // outside world, and that gets set.  Then, consider
 // each of connections to stuff from the solution tree.
 //
@@ -58,7 +58,7 @@ pub struct Grid {
     pub x: usize,
     pub y: usize,
     pub bins: Vec<Bin>,
-    pub map_c2b: Vec<usize>,
+    pub map_mod2bin: Vec<usize>,
     pub edges: Vec<Edge>,
     pub rand_value: u32,  // Used for the scramble, so that results are stable
     pub debug: bool,
@@ -73,7 +73,7 @@ pub struct Bin {
     pub index: usize,
 }
 
-pub struct Cell {
+pub struct Module {
     pub tag: usize,
     pub grid_x: u32,
     pub grid_y: u32,
@@ -171,7 +171,7 @@ impl Grid {
             x,
             y,
             bins: Vec::with_capacity(count),
-            map_c2b: vec!(0 as usize; count),
+            map_mod2bin: vec!(0 as usize; count),
             edges: Vec::new(),
             rand_value: 8675309,
             debug: false,
@@ -181,7 +181,7 @@ impl Grid {
             for x in 0..x {
                 let idx = g.grid_index(x, y);
                 g.bins.push(Bin { x: x as f32, y: y as f32, grid_x: x, grid_y: y, index: idx });
-                g.map_c2b[idx] = idx;
+                g.map_mod2bin[idx] = idx;
             }
         }
 
@@ -217,12 +217,12 @@ impl Grid {
 
     }
 
-    // Computes the weighted cost of all edges, given a mapping of cells to bins
+    // Computes the weighted cost of all edges, given a mapping of modules to bins
     pub fn grid_cost(&self, map:&Vec<usize>) -> f32 {
         let mut total = 0.0;
 
         for e in &self.edges {
-            // Edge goes from cluster a to cluster b -- so get the coords for each, multiply
+            // Edge goes from module a to module b -- so get the coords for each, multiply
             // by the weight of the edge
             let ba = map[e.a];
             let bb = map[e.b];
@@ -231,7 +231,7 @@ impl Grid {
             let x2 = self.bins[bb].x;
             let y2 = self.bins[bb].y;
             let c = ((x1 - x2).abs() + (y1 - y2).abs()) * e.weight;
-            // println!("Edge from cell index {}:b{} to {}:b{} == {}", e.a, map[e.a], e.b, map[e.b], c);
+            // println!("Edge from module index {}:b{} to {}:b{} == {}", e.a, map[e.a], e.b, map[e.b], c);
             total = total + c;
         }
 
@@ -276,47 +276,47 @@ impl Grid {
     }
     pub fn scramble(&mut self, llx: usize, lly: usize, urx: usize, ury: usize) {
         
-        let inverse_map = self.inverse(&self.map_c2b);
+        let inverse_map = self.inverse(&self.map_mod2bin);
 
 
-        // Get all of the cells within this window of the grid
-        let mut scramble_cells = Vec::new();
+        // Get all of the modules within this window of the grid
+        let mut scramble_modules = Vec::new();
         for x in llx..urx {
             for y in lly..ury {
                 let idx = self.grid_index(x, y);
-                scramble_cells.push(inverse_map[idx]);
+                scramble_modules.push(inverse_map[idx]);
             }
         }
-        // Pull one cell out of the scramble at a time, and insert
+        // Pull one module out of the scramble at a time, and insert
         // into the grid
         for x in llx..urx {
             for y in lly..ury {
                 let idx = self.grid_index(x, y);
-                let c = self.pull_random(&mut scramble_cells);
-                self.map_c2b[c] = idx;
+                let c = self.pull_random(&mut scramble_modules);
+                self.map_mod2bin[c] = idx;
             }
         }        
     }
 
-    pub fn cell_net(&self) -> Vec<Vec<usize>> {
-        let mut cellnet = Vec::new();
+    pub fn module_net(&self) -> Vec<Vec<usize>> {
+        let mut modulenet = Vec::new();
         for i in 0..self.bins.len() {
-            cellnet.push(Vec::new());
+            modulenet.push(Vec::new());
         }
         for i in 0..self.edges.len() {
             let e = &self.edges[i];
-            cellnet[e.a].push(i);
-            cellnet[e.b].push(i);
+            modulenet[e.a].push(i);
+            modulenet[e.b].push(i);
             // println!("Edge {}  connects {} to {}", i, e.a, e.b);
         }
 
-        cellnet
+        modulenet
     }
 
     // opt_layers takes in a series of bin IDs, arranged in layers.
-    // Used with the grid code, cell maping of cells to bins, and use
-    // an inverse map to determine which bin contains a cell.
-    // From this, we know which cells are mapped to a permutation of
+    // Used with the grid code, module maping of modules to bins, and use
+    // an inverse map to determine which bin contains a module.
+    // From this, we know which modules are mapped to a permutation of
     // bins in a layer.  We can also determine the nets that are
     // in play, and the layer at which a net is closed.
     //
@@ -326,16 +326,16 @@ impl Grid {
         println!("Optimize {} layers, delta {}", layers.len(), delta);
 
 
-        let inverse_map = self.inverse(&self.map_c2b);
+        let inverse_map = self.inverse(&self.map_mod2bin);
 
-        let mut cellnet = Vec::new();
+        let mut modulenet = Vec::new();
         for i in 0..self.bins.len() {
-            cellnet.push(Vec::new());
+            modulenet.push(Vec::new());
         }
         for i in 0..self.edges.len() {
             let e = &self.edges[i];
-            cellnet[e.a].push(i);
-            cellnet[e.b].push(i);
+            modulenet[e.a].push(i);
+            modulenet[e.b].push(i);
             // println!("Edge {}  connects {} to {}", i, e.a, e.b);
         }
 
@@ -344,9 +344,9 @@ impl Grid {
         let mut level = 1;
         for layer in &layers {
             for idx in layer {
-                // println!("MARK grid {} is cell {}  inverse (not {})", idx, inverse_map[idx], self.map_c2b[idx]);
-                let cell_id = inverse_map[*idx];
-                for edge_id in &cellnet[cell_id]{
+                // println!("MARK grid {} is module {}  inverse (not {})", idx, inverse_map[idx], self.map_c2b[idx]);
+                let module_id = inverse_map[*idx];
+                for edge_id in &modulenet[module_id]{
                     highmark[*edge_id] = level;
                     // println!("     edge {}  connect {} {}  at level {}", edge_id, self.edges[*edge_id].a, self.edges[*edge_id].b, level);
                 }
@@ -388,14 +388,14 @@ impl Grid {
         
         // HCWT ROOT NODES
         let root = Node {
-            cost: net_cost(&self.map_c2b, &netlevels[0], &self.edges, &self.bins),
+            cost: net_cost(&self.map_mod2bin, &netlevels[0], &self.edges, &self.bins),
             selection: 0,
         };
         let mut roots = Vec::new();
         roots.push(root);
         // HCWT ROOT DECISION  (Placeholder)
         let root_dec = Decision {
-            cells: Vec::new(),
+            modules: Vec::new(),
             mappings: Vec::new(),
             closenets: Vec::new(),
         };
@@ -410,7 +410,7 @@ impl Grid {
         for layer in &layers {
             let mut dx = hcwt.new_decision();
             let mut decision = Decision {
-                cells: Vec::new(),
+                modules: Vec::new(),
                 mappings: Vec::new(),
                 closenets: netlevels[level].clone(),
             };
@@ -419,9 +419,9 @@ impl Grid {
             let mut orig_map = Vec::new();
             for idx in layer {
                 // let idx = self.grid_index(x, y);
-                decision.cells.push(inverse_map[*idx]);
+                decision.modules.push(inverse_map[*idx]);
                 orig_map.push(*idx);
-                // println!("  Original mapping cell {} to bin {}", inverse_map[idx], idx);
+                // println!("  Original mapping module {} to bin {}", inverse_map[idx], idx);
             }
             let permlist = perms(orig_map.len() as u32, 100);
             for p in &permlist {
@@ -456,9 +456,9 @@ impl Grid {
 
         let last = &hcwt.levels.last().unwrap().nodes;
         let level = hcwt.levels.len() - 1;
-        let mut best = net_cost(&self.map_c2b, &all_nets, &self.edges, &self.bins);
-        let mut best_mapping = self.map_c2b.clone();
-        let mut mapping = self.map_c2b.clone();
+        let mut best = net_cost(&self.map_mod2bin, &all_nets, &self.edges, &self.bins);
+        let mut best_mapping = self.map_mod2bin.clone();
+        let mut mapping = self.map_mod2bin.clone();
 
         for i in 0..last.len() {
             let node = &last[i];
@@ -486,10 +486,10 @@ impl Grid {
         let mut reverse = layers.clone();
         reverse.reverse();
 
-        let mut best_cost = self.grid_cost(&self.map_c2b);
+        let mut best_cost = self.grid_cost(&self.map_mod2bin);
         let (cost, map) = self.opt_layers(layers, delta);
         println!("Forward direction cost: {}", cost);
-        self.map_c2b = map;
+        self.map_mod2bin = map;
         let (cost, map) = self.opt_layers(reverse, delta);
         println!("After reverse, cost {}", cost);
 
@@ -529,7 +529,7 @@ impl Grid {
         let mut layers = Vec::new();
         let mut x = limits.llx;
         let mut y = limits.lly;
-        let mut best_cost = self.grid_cost(&self.map_c2b);
+        let mut best_cost = self.grid_cost(&self.map_mod2bin);
         
         while (x < limits.urx)
         {
@@ -588,7 +588,7 @@ impl Grid {
                     best_cost = cost;
                     mapping = map.clone();
                 }
-                self.map_c2b = map;
+                self.map_mod2bin = map;
             }
             x = x + step.dx;
         }
@@ -599,26 +599,26 @@ impl Grid {
     }
 
     pub fn grid_analytic(&mut self, limits: ScanLimits, alpha: f32, steps: u32) {
-        // Run through and find the cells that are within this window.
-        let inverse_map = self.inverse(&self.map_c2b);
-        let mut cells = Vec::new();
+        // Run through and find the modules that are within this window.
+        let inverse_map = self.inverse(&self.map_mod2bin);
+        let mut modules = Vec::new();
 
         for x in limits.llx..limits.urx {
             for y in limits.lly..limits.ury {
-                cells.push(inverse_map[self.grid_index(x, y)]);
+                modules.push(inverse_map[self.grid_index(x, y)]);
             }
         }
-        println!("{} cells being operated on by analytic engine", cells.len());
+        println!("{} modules being operated on by analytic engine", modules.len());
 
-        // Initialize cell locations
+        // Initialize module locations
         let mut locations = Vec::new();
-        for c in 0..self.map_c2b.len() {
-            let bin = self.map_c2b[c];
+        for c in 0..self.map_mod2bin.len() {
+            let bin = self.map_mod2bin[c];
             let x = self.bins[bin].x * 50.0;
             let y = self.bins[bin].y * 50.0;
             let mut pos = Vec::new();
             pos.push((x, y));
-            locations.push(CellPosition{
+            locations.push(ModulePosition{
                     x: x,
                     y: y,
                     history: pos,
@@ -626,7 +626,7 @@ impl Grid {
         }
         // Initial net centers
 
-        let cellnet = self.cell_net();
+        let modulenet = self.module_net();
         for step in 0..steps {
             println!("ITERATION {}", step);
             let mut net_center = Vec::new();
@@ -639,14 +639,14 @@ impl Grid {
                     x: cx,
                     y: cy,
                 });
-                println!("Edge {} links cells {} to {}, center {} {}", i, self.edges[i].a, self.edges[i].b, cx, cy);
+                println!("Edge {} links modules {} to {}, center {} {}", i, self.edges[i].a, self.edges[i].b, cx, cy);
             }
         
-            for c in &cells {
+            for c in &modules {
                 let mut x = 0.0;
                 let mut y = 0.0;
                 let mut weight = 0.0;
-                for edge_id in &cellnet[*c] {
+                for edge_id in &modulenet[*c] {
                     x = x + net_center[*edge_id].x;
                     y = y + net_center[*edge_id].y;
                     weight = weight + 1.0;
@@ -659,7 +659,7 @@ impl Grid {
                 let dy = y - locations[*c].y;
                 let newx = locations[*c].x + alpha * dx;
                 let newy = locations[*c].y + alpha * dy;
-                println!("Move cell {} from {} {} to {} {}", c, locations[*c].x, locations[*c].y, newx, newy);
+                println!("Move module {} from {} {} to {} {}", c, locations[*c].x, locations[*c].y, newx, newy);
                 locations[*c].x = newx;
                 locations[*c].y = newy;
                 locations[*c].history.push((newx,newy));
@@ -667,14 +667,14 @@ impl Grid {
         }
         let mut pst = pstools_r::PSTool::new();
         pst.add_color(0.1, 0.1, 0.1, 1.0);
-        for c in &cells {
+        for c in &modules {
             pst.add_box(locations[*c].x - 5.0, locations[*c].y - 5.0, locations[*c].x + 5.0, locations[*c].y + 5.0);
 
         }
         pst.add_color(1.0, 0.0, 0.0, 1.0);
         println!("FINAL MOTION");
-        for c in &cells {
-            println!("CELL {} pos: {} {}", *c, locations[*c].x, locations[*c].y);
+        for c in &modules {
+            println!("module {} pos: {} {}", *c, locations[*c].x, locations[*c].y);
             let mut px = 0.0;
             let mut py = 0.0;
             let mut first = true;
@@ -690,13 +690,13 @@ impl Grid {
         }
         pst.generate("analytic.ps".to_string());
 
-        // Now repeatedly move cells some percentage of the distance
+        // Now repeatedly move modules some percentage of the distance
     }
     
 
 }
 
-pub struct CellPosition {
+pub struct ModulePosition {
     pub x: f32,
     pub y: f32,
     pub history: Vec<(f32,f32)>,
@@ -722,7 +722,7 @@ pub fn net_cost(mapping:&Vec<usize>, nets:&Vec<usize>, edges: &Vec<Edge>, bins:&
         let x2 = bins[bb].x;
         let y2 = bins[bb].y;
         let c = ((x1 - x2).abs() + (y1 - y2).abs()) * e.weight;
-        // println!("NCEdge {:3} from cell index {}:b{} to {}:b{} == {}", *n, e.a, mapping[e.a], e.b, mapping[e.b], c);
+        // println!("NCEdge {:3} from module index {}:b{} to {}:b{} == {}", *n, e.a, mapping[e.a], e.b, mapping[e.b], c);
         total = total + c;
     }
     // println!("Total for the group: {}", total);
@@ -740,11 +740,11 @@ fn trace(hcwt: &HCwT<Context,Decision,Node>, level: usize, index: usize, mapping
         // println!("  Level {}", level);
         // if level < hcwt.levels.len() {
             let d = &hcwt.levels[level].decisions[0];
-            for i in 0..d.cells.len() {
-                // println!("   Cell {} maps to bin {}", d.cells[i], d.mappings[node.selection][i]);
-                // println!("   Cell {} maps to bin ..", d.cells[i]);
-                //mapping[d.mappings[node.selection][i]] = d.cells[i];
-                mapping[d.cells[i]] = d.mappings[node.selection][i];
+            for i in 0..d.modules.len() {
+                // println!("   module {} maps to bin {}", d.modules[i], d.mappings[node.selection][i]);
+                // println!("   module {} maps to bin ..", d.modules[i]);
+                //mapping[d.mappings[node.selection][i]] = d.modules[i];
+                mapping[d.modules[i]] = d.mappings[node.selection][i];
             }
         //}
     }
@@ -759,20 +759,20 @@ fn generate(hcwt: &HCwT<Context,Decision,Node>, context: &mut Context, level: us
     // Set up the mapping for the prior levels
     // let mut tmpmap = hcwt.user_context.mapping.clone();
     // trace(hcwt, level - 1, parent_node_index, &mut tmpmap);
-    trace(hcwt, level - 1, parent_node_index, &mut context.grid.map_c2b);
+    trace(hcwt, level - 1, parent_node_index, &mut context.grid.map_mod2bin);
 
     let d = &hcwt.levels[level].decisions[0];
     for mi in 0..detail.mappings.len() {
-        for i in 0..detail.cells.len() {
-            // println!("Generate map cell {} to bin {}", detail.cells[i], detail.mappings[mi][i]);
-            // tmpmap[d.cells[i]] = d.mappings[mi][i];
-            context.grid.map_c2b[d.cells[i]] = d.mappings[mi][i];
+        for i in 0..detail.modules.len() {
+            // println!("Generate map module {} to bin {}", detail.modules[i], detail.mappings[mi][i]);
+            // tmpmap[d.modules[i]] = d.mappings[mi][i];
+            context.grid.map_mod2bin[d.modules[i]] = d.mappings[mi][i];
         }
 
         let mut new_node = parent_node.detail;
         new_node.selection = mi;
         // let incremental = net_cost(&tmpmap, &d.closenets, &hcwt.user_context.edges, &hcwt.user_context.bins);
-        let incremental = net_cost(&context.grid.map_c2b, &d.closenets, &context.grid.edges, &context.grid.bins);
+        let incremental = net_cost(&context.grid.map_mod2bin, &d.closenets, &context.grid.edges, &context.grid.bins);
         // if incremental != inc2 {
         //    println!("ERROR!  Mismatch on incremental!");
         // }
@@ -804,7 +804,7 @@ struct Context {
     grid: Grid,
 }
 struct Decision {
-    cells: Vec<usize>,  // Cells that are reassigned
+    modules: Vec<usize>,  // modules that are reassigned
     mappings: Vec<Vec<usize>>, // The bins they may go to 
     closenets: Vec<usize>, // Nets that complete at this level
 }
@@ -834,42 +834,42 @@ pub fn grid_test_hv()
     }
 
     println!("Grid: ");
-    g.print(&g.map_c2b);
+    g.print(&g.map_mod2bin);
 
     // Scramble the bin assignments
     g.scramble(1, 1, xdim - 1, ydim - 1);
-    g.print(&g.map_c2b);
+    g.print(&g.map_mod2bin);
     
     let (c, map) = g.opt_v(1, 1, xdim - 1, ydim - 1);
     g.print(&map);
-    g.map_c2b = map;
+    g.map_mod2bin = map;
     let (c, map) = g.opt_h(1, 1, xdim - 1, ydim - 1);
     g.print(&map);
-    g.map_c2b = map;
+    g.map_mod2bin = map;
     let (c, map) = g.opt_v(1, 1, xdim - 1, ydim - 1);
     g.print(&map);
-    g.map_c2b = map;    
+    g.map_mod2bin = map;    
     let (c, map) = g.opt_h(1, 1, xdim - 1, ydim - 1);
     g.print(&map);
-    g.map_c2b = map;        
+    g.map_mod2bin = map;        
     let (c, map) = g.opt_v(1, 1, xdim - 1, ydim - 1);
     g.print(&map);
-    g.map_c2b = map;    
+    g.map_mod2bin = map;    
     let (c, map) = g.opt_h(1, 1, xdim - 1, ydim - 1);
     g.print(&map);
-    g.map_c2b = map;            
+    g.map_mod2bin = map;            
     let (c, map) = g.opt_v(1, 1, xdim - 1, ydim - 1);
     g.print(&map);
-    g.map_c2b = map;    
+    g.map_mod2bin = map;    
     let (c, map) = g.opt_h(1, 1, xdim - 1, ydim - 1);
     g.print(&map);
-    g.map_c2b = map;        
+    g.map_mod2bin = map;        
     let (c, map) = g.opt_v(1, 1, xdim - 1, ydim - 1);
     g.print(&map);
-    g.map_c2b = map;    
+    g.map_mod2bin = map;    
     let (c, map) = g.opt_h(1, 1, xdim - 1, ydim - 1);
     g.print(&map);
-    g.map_c2b = map;        
+    g.map_mod2bin = map;        
 }
 
 pub fn grid_test_analytic() {
@@ -889,10 +889,10 @@ pub fn grid_test_analytic() {
     }
     
     println!("Grid: ");
-    g.print(&g.map_c2b);
+    g.print(&g.map_mod2bin);
     // Scramble the bin assignments
     g.scramble(1, 1, xdim - 1, ydim - 1);
-    g.print(&g.map_c2b);
+    g.print(&g.map_mod2bin);
 
 
     let limits = ScanLimits{
@@ -922,11 +922,11 @@ pub fn grid_test_scan() {
     }
     
     println!("Grid: ");
-    g.print(&g.map_c2b);
+    g.print(&g.map_mod2bin);
 
     // Scramble the bin assignments
     g.scramble(1, 1, xdim - 1, ydim - 1);
-    g.print(&g.map_c2b);
+    g.print(&g.map_mod2bin);
 
     let lim = ScanLimits{
         llx: 1,
@@ -947,16 +947,16 @@ pub fn grid_test_scan() {
         height: 8,
     };
     g.opt_scan(lim, window_v, step, true);
-    g.print(&g.map_c2b);
+    g.print(&g.map_mod2bin);
 
     g.opt_scan(lim, window_h, step, false);
-    g.print(&g.map_c2b);
+    g.print(&g.map_mod2bin);
 
     g.opt_scan(lim, window_v, step, true);
-    g.print(&g.map_c2b);
+    g.print(&g.map_mod2bin);
 
     g.opt_scan(lim, window_h, step, false);
-    g.print(&g.map_c2b);    
+    g.print(&g.map_mod2bin);    
 
 }
 
