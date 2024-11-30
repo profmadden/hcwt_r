@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::fmt;
 
 // Rearrangement of grid-mapped items
 //
@@ -101,6 +102,12 @@ pub struct ScanLimits {
 pub struct ScanWindow {
     pub width: usize,
     pub height: usize,
+}
+
+impl fmt::Display for ScanLimits {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "[{},{} - {},{}]:{}", self.llx, self.lly, self.urx, self.ury, (self.urx-self.llx)*(self.ury-self.lly))
+    }
 }
 #[derive(Copy, Clone)]
 pub struct ScanStep {
@@ -214,7 +221,14 @@ impl Grid {
         } else {
             self.edges.push(Edge { a: idx2, b: idx1, weight});
         }
+    }
 
+    pub fn add_edge_idx(&mut self, idx1: usize, idx2: usize, weight: f32) {
+        if (idx1 < idx2) {
+            self.edges.push(Edge { a: idx1, b: idx2, weight});
+        } else {
+            self.edges.push(Edge { a: idx2, b: idx1, weight});
+        }  
     }
 
     // Computes the weighted cost of all edges, given a mapping of modules to bins
@@ -323,7 +337,9 @@ impl Grid {
     // Moving code out of the original opt_h, to make it generic, and
     // able to be reused in a bunch of spots.
     pub fn opt_layers(&mut self, layers: Vec<Vec<usize>>, delta: u32) -> (f32, Vec<usize>) {
-        println!("Optimize {} layers, delta {}", layers.len(), delta);
+        if self.debug {
+            println!("Optimize {} layers, delta {}", layers.len(), delta);
+        }
 
 
         let inverse_map = self.inverse(&self.map_mod2bin);
@@ -336,19 +352,28 @@ impl Grid {
             let e = &self.edges[i];
             modulenet[e.a].push(i);
             modulenet[e.b].push(i);
-            // println!("Edge {}  connects {} to {}", i, e.a, e.b);
+            if self.debug {
+                println!("Edge {}  connects {} to {}  weight {}", i, e.a, e.b, e.weight);
+            }
         }
 
         let mut highmark = vec![0; self.edges.len()];
         // Now determine the last level any particular edge is touched at
         let mut level = 1;
         for layer in &layers {
+            if self.debug {
+                println!("Checking layer {} with {} elements", level, layer.len());
+            }
             for idx in layer {
-                // println!("MARK grid {} is module {}  inverse (not {})", idx, inverse_map[idx], self.map_c2b[idx]);
+                if self.debug {
+                    println!("MARK grid {} is module {}  inverse (not {})", idx, inverse_map[*idx], self.map_mod2bin[*idx]);
+                }
                 let module_id = inverse_map[*idx];
                 for edge_id in &modulenet[module_id]{
                     highmark[*edge_id] = level;
-                    // println!("     edge {}  connect {} {}  at level {}", edge_id, self.edges[*edge_id].a, self.edges[*edge_id].b, level);
+                    if self.debug {
+                        println!("     edge {}  connect {} {}  at level {}", edge_id, self.edges[*edge_id].a, self.edges[*edge_id].b, level);
+                    }
                 }
             }
             level = level + 1;
@@ -563,8 +588,9 @@ impl Grid {
     pub fn opt_scan(&mut self, limits: ScanLimits, window: ScanWindow, step: ScanStep, horizontal: bool) -> (f32, Vec<usize>) {
         let mut x = limits.llx;
         let mut y = limits.lly;
-        let mut best_cost = 999999.0;
-        let mut mapping = Vec::new();
+        let mut best_cost = self.grid_cost(&self.map_mod2bin);
+        let mut best_mapping = self.map_mod2bin.clone();
+        println!("Scan initial cost: {}", best_cost);
         while x < limits.urx
         {
             y = limits.lly;
@@ -574,8 +600,7 @@ impl Grid {
                 let mut ury = limits.ury.min(y + window.height);
 
                 println!("Opt window {} {}   {} {} h: {}", x, y, urx, ury, horizontal);
-
-                y = y + step.dy;
+                
                 let cost;
                 let map;
                 if horizontal {
@@ -586,19 +611,93 @@ impl Grid {
                 println!("Cost: {}", cost);
                 if cost <= best_cost {
                     best_cost = cost;
-                    mapping = map.clone();
+                    best_mapping = map.clone();
                 }
-                self.map_mod2bin = map;
+                self.map_mod2bin = best_mapping.clone();
+                y = y + step.dy;
             }
             x = x + step.dx;
         }
 
         println!("Final cost: {}", best_cost);
 
-        (best_cost, mapping)
+        (best_cost, best_mapping)
     }
 
-    pub fn grid_analytic(&mut self, limits: ScanLimits, alpha: f32, steps: u32) {
+    pub fn analytic_assign(&mut self, limits: ScanLimits, locations: Vec<ModuleAssign>, map: &mut Vec<usize>) {
+        println!("Analytic assign {},  {} entries", limits, locations.len());
+        let dx = limits.urx - limits.llx;
+        let dy = limits.ury - limits.lly;
+        println!("  DX*DY = {}", dx * dy);
+
+        if dx == 1 && dy == 1 {
+            // End case -- assign the remaining module to the bin
+            let idx = self.grid_index(limits.llx, limits.lly);
+            println!("Assign module {} at {} {} to bin {} {} ({} {})", locations[0].module, locations[0].x, locations[0].y, limits.llx, limits.lly, self.bins[idx].x, self.bins[idx].y);
+            self.map_mod2bin[locations[0].module] = idx;
+            return;
+        }
+
+        if locations.len() < 1 {
+            println!("Why are we here?");
+            return;
+        }
+
+        let mut sublocations = locations.clone();
+
+
+        if dy > dx {
+            // Split horizontally, sort things by y axis
+            sublocations.sort_by_key(|a| (a.y * 100.0) as i32);
+            let sp = (limits.ury + limits.lly)/2;
+            let mut lower = limits;
+            lower.ury = sp;
+            let mut higher = limits;
+            higher.lly = sp;
+            let n = (lower.urx - lower.llx)*(lower.ury - lower.lly);
+            println!("SplitH {} to {} {}  with n=={}", limits, lower, higher, n);
+            let mut sl1 = Vec::new();
+            let mut sl2 = Vec::new();
+            for i in 0..sublocations.len() {
+                if i < n {
+                    println!("  Mod {}   {} {} lower", sublocations[i].module, sublocations[i].x, sublocations[i].y);
+                    sl1.push(sublocations[i]);
+                } else {
+                    println!("  Mod {}   {} {} higher", sublocations[i].module, sublocations[i].x, sublocations[i].y);                    
+                    sl2.push(sublocations[i]);
+                }
+            }
+            self.analytic_assign(lower, sl1, map);
+            self.analytic_assign( higher, sl2, map);
+        } else {
+            // Split things vertically, sort things by x axis
+            sublocations.sort_by_key(|a| (a.x * 100.0) as i32);
+            let sp = (limits.urx + limits.llx)/2;
+            let mut left = limits;
+            left.urx = sp;
+            let mut right = limits;
+            right.llx = sp;
+            let n = (left.urx - left.llx)*(left.ury - left.lly);
+            let mut sl1 = Vec::new();
+            let mut sl2 = Vec::new();
+            println!("SplitV {} to {} {}  with n=={}", limits, left, right, n);
+            for i in 0..sublocations.len() {
+                if i < n {
+                    println!("  Mod {}   {} {} left", sublocations[i].module, sublocations[i].x, sublocations[i].y);
+                    sl1.push(sublocations[i]);
+                } else {
+                    println!("  Mod {}   {} {} right", sublocations[i].module, sublocations[i].x, sublocations[i].y);
+                    sl2.push(sublocations[i]);
+                }
+            }
+            self.analytic_assign(left, sl1, map);
+            self.analytic_assign(right, sl2, map);
+
+
+        }
+    }
+
+    pub fn grid_analytic(&mut self, limits: ScanLimits, scale: f32, alpha: f32, steps: u32) {
         // Run through and find the modules that are within this window.
         let inverse_map = self.inverse(&self.map_mod2bin);
         let mut modules = Vec::new();
@@ -614,8 +713,8 @@ impl Grid {
         let mut locations = Vec::new();
         for c in 0..self.map_mod2bin.len() {
             let bin = self.map_mod2bin[c];
-            let x = self.bins[bin].x * 50.0;
-            let y = self.bins[bin].y * 50.0;
+            let x = self.bins[bin].x * scale;
+            let y = self.bins[bin].y * scale;
             let mut pos = Vec::new();
             pos.push((x, y));
             locations.push(ModulePosition{
@@ -639,14 +738,14 @@ impl Grid {
                     x: cx,
                     y: cy,
                 });
-                println!("Edge {} links modules {} to {}, center {} {}", i, self.edges[i].a, self.edges[i].b, cx, cy);
+                // println!("Edge {} links modules {} to {}, center {} {}", i, self.edges[i].a, self.edges[i].b, cx, cy);
             }
         
-            for c in &modules {
+            for module in &modules {
                 let mut x = 0.0;
                 let mut y = 0.0;
                 let mut weight = 0.0;
-                for edge_id in &modulenet[*c] {
+                for edge_id in &modulenet[*module] {
                     x = x + net_center[*edge_id].x;
                     y = y + net_center[*edge_id].y;
                     weight = weight + 1.0;
@@ -655,14 +754,14 @@ impl Grid {
                     x = x / weight;
                     y = y / weight;
                 }
-                let dx = x - locations[*c].x;
-                let dy = y - locations[*c].y;
-                let newx = locations[*c].x + alpha * dx;
-                let newy = locations[*c].y + alpha * dy;
-                println!("Move module {} from {} {} to {} {}", c, locations[*c].x, locations[*c].y, newx, newy);
-                locations[*c].x = newx;
-                locations[*c].y = newy;
-                locations[*c].history.push((newx,newy));
+                let dx = x - locations[*module].x;
+                let dy = y - locations[*module].y;
+                let newx = locations[*module].x + alpha * dx;
+                let newy = locations[*module].y + alpha * dy;
+                // println!("Move module {} from {} {} to {} {}", module, locations[*module].x, locations[*module].y, newx, newy);
+                locations[*module].x = newx;
+                locations[*module].y = newy;
+                locations[*module].history.push((newx,newy));
             }
         }
         let mut pst = pstools_r::PSTool::new();
@@ -673,12 +772,12 @@ impl Grid {
         }
         pst.add_color(1.0, 0.0, 0.0, 1.0);
         println!("FINAL MOTION");
-        for c in &modules {
-            println!("module {} pos: {} {}", *c, locations[*c].x, locations[*c].y);
+        for module in &modules {
+            println!("module {} pos: {} {}", *module, locations[*module].x, locations[*module].y);
             let mut px = 0.0;
             let mut py = 0.0;
             let mut first = true;
-            for pos in &locations[*c].history {
+            for pos in &locations[*module].history {
                 // println!("  {} {}", pos.0, pos.1);
                 if !first {
                     pst.add_line(px, py, pos.0, pos.1);
@@ -690,8 +789,21 @@ impl Grid {
         }
         pst.generate("analytic.ps".to_string());
 
-        // Now repeatedly move modules some percentage of the distance
+        // Now we put the modules into the original bins
+        let mut modassign = Vec::new();
+        for module in &modules {
+            modassign.push(ModuleAssign{
+                x: locations[*module].x,
+                y: locations[*module].y,
+                module: *module,
+            });
+        }
+        let mut themap = Vec::new();
+        self.analytic_assign(limits, modassign, &mut themap);
+
     }
+
+
     
 
 }
@@ -704,6 +816,13 @@ pub struct ModulePosition {
 pub struct EdgeCenter {
     pub x: f32,
     pub y: f32,
+}
+
+#[derive(Copy,Clone)]
+pub struct ModuleAssign {
+    pub x: f32,
+    pub y: f32,
+    pub module: usize,
 }
 
 
@@ -901,7 +1020,7 @@ pub fn grid_test_analytic() {
         urx: xdim - 1,
         ury: ydim - 1, 
     };
-    g.grid_analytic(limits, 0.3, 500);
+    g.grid_analytic(limits, 50.0, 0.3, 500);
 
 }
 
