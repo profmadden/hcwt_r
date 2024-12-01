@@ -1,4 +1,3 @@
-use std::sync::Arc;
 use std::fmt;
 
 // Rearrangement of grid-mapped items
@@ -100,8 +99,8 @@ pub struct ScanLimits {
 }
 #[derive(Copy, Clone)]
 pub struct ScanWindow {
-    pub width: usize,
-    pub height: usize,
+    pub layer_width: usize, //How many bins in a layer
+    pub depth: usize,  // How many layers deep
 }
 
 impl fmt::Display for ScanLimits {
@@ -144,7 +143,11 @@ pub fn gen_permutation(items: &Vec<usize>, taken: &mut Vec<bool>, decided: &mut 
     }
 }
 
+//  When doing permutations -- limit to 6 or less?
 pub fn perms(n: u32, max_delta: u32) -> Vec<Permlist> {
+    if n > 6 {
+        println!("REQUESTED {} permutations?", n);
+    }
     let mut items = Vec::new();
     let mut taken = Vec::new();
     let mut order = Vec::new();
@@ -192,6 +195,21 @@ impl Grid {
             }
         }
 
+        g
+    }
+
+    pub fn new_mesh(xdim: usize, ydim: usize) -> Grid {
+        let mut g = Grid::new(xdim, ydim);
+        for x in 0..xdim {
+            for y in 0..(ydim - 1) {
+                g.add_edge(x, y, x, y + 1, 1.0);
+            }
+        }
+        for y in 0..ydim {
+            for x in 0..(xdim - 1) {
+                g.add_edge(x, y, x + 1, y, 1.0);
+            }
+        }
         g
     }
 
@@ -501,7 +519,7 @@ impl Grid {
             }
         }
 
-        println!("Best cost: {}", best);
+        // println!("Best cost: {}", best);
         
         (best, best_mapping)
 
@@ -513,10 +531,10 @@ impl Grid {
 
         let mut best_cost = self.grid_cost(&self.map_mod2bin);
         let (cost, map) = self.opt_layers(layers, delta);
-        println!("Forward direction cost: {}", cost);
+        // println!("Forward direction cost: {}", cost);
         self.map_mod2bin = map;
         let (cost, map) = self.opt_layers(reverse, delta);
-        println!("After reverse, cost {}", cost);
+        //  println!("After reverse, cost {}", cost);
 
         (cost, map)
     }
@@ -550,16 +568,16 @@ impl Grid {
     }
 
     
-    pub fn opt_mxn(&mut self, limits: ScanLimits, window: ScanWindow, m: usize, n: usize) -> (f32, Vec<usize>) {
+    pub fn opt_mxn(&mut self, limits: ScanLimits, m: usize, n: usize) -> (f32, Vec<usize>) {
         let mut layers = Vec::new();
         let mut x = limits.llx;
         let mut y = limits.lly;
         let mut best_cost = self.grid_cost(&self.map_mod2bin);
         
-        while (x < limits.urx)
+        while x < limits.urx
         {
             y = limits.lly;
-            while (y < limits.ury)
+            while y < limits.ury
             {
                 let mut urx = limits.urx.min(x + m);
                 let mut ury = limits.ury.min(y + n);
@@ -569,17 +587,57 @@ impl Grid {
                 for gx in x..urx {
                     for gy in y..ury {
                         layer.push(self.grid_index(gx, gy));
+                        // println!("Grid {} {}  -- bin {}", gx, gy, self.grid_index(gx, gy));
                     }
                 }
-                println!("mxn layer {} {}   {} {}  with {} bins", x, y, urx, ury, layer.len());
+                // println!("mxn layer {} {}   {} {}  with {} bins", x, y, urx, ury, layer.len());
                 layers.push(layer);
                 y = y + n;
             }
             x = x + m;
         }
+        // println!("About to call layer solver on {} layers", layers.len());
+        self.opt_bi_layers(layers, 1000)
 
-        self.opt_layers(layers, 1000)
+    }
 
+    pub fn opt_churn_h(&mut self, limits: ScanLimits) -> (f32, Vec<usize>) {
+        let mut best_cost = self.grid_cost(&self.map_mod2bin);
+        let mut best_mapping = self.map_mod2bin.clone();
+        let mut x = limits.llx;
+        while x + 2 <= limits.urx {
+            let mut l2 = limits;
+            l2.llx = x;
+            l2.urx = x + 2;
+            let (cost, map) = self.opt_mxn(l2, 2, 2);
+            // println!("Churn cost {}", cost);
+            if cost <= best_cost {
+                best_cost = cost;
+                best_mapping = map.clone();
+                self.map_mod2bin = best_mapping.clone();
+            }
+            x = x + 1;
+        }
+        (best_cost, best_mapping)
+    }
+    pub fn opt_churn_v(&mut self, limits: ScanLimits) -> (f32, Vec<usize>) {
+        let mut best_cost = self.grid_cost(&self.map_mod2bin);
+        let mut best_mapping = self.map_mod2bin.clone();
+        let mut y = limits.llx;
+        while y + 2 <= limits.ury {
+            let mut l2 = limits;
+            l2.lly = y;
+            l2.ury = y + 2;
+            let (cost, map) = self.opt_mxn(l2, 2, 2);
+            // println!("Churn cost {}", cost);
+            if cost <= best_cost {
+                best_cost = cost;
+                best_mapping = map.clone();
+                self.map_mod2bin = best_mapping.clone();
+            }
+            y = y + 1;
+        }
+        (best_cost, best_mapping)
     }
     
 
@@ -596,10 +654,19 @@ impl Grid {
             y = limits.lly;
             while y < limits.ury
             {
-                let mut urx = limits.urx.min(x + window.width);
-                let mut ury = limits.ury.min(y + window.height);
+                let mut urx;
+                let mut ury;
 
-                println!("Opt window {} {}   {} {} h: {}", x, y, urx, ury, horizontal);
+                if horizontal {
+                    urx = limits.urx.min(x + window.depth);
+                    ury = limits.ury.min(y + window.layer_width);
+                } else {
+                    urx = limits.urx.min(x + window.layer_width);
+                    ury = limits.ury.min(y + window.depth);
+                }
+
+
+                // println!("Opt window {} {}   {} {} h: {}", x, y, urx, ury, horizontal);
                 
                 let cost;
                 let map;
@@ -608,7 +675,7 @@ impl Grid {
                 } else {
                     (cost, map) = self.opt_v(x, y, urx, ury);
                 }
-                println!("Cost: {}", cost);
+                // println!("Cost: {}", cost);
                 if cost <= best_cost {
                     best_cost = cost;
                     best_mapping = map.clone();
@@ -619,7 +686,7 @@ impl Grid {
             x = x + step.dx;
         }
 
-        println!("Final cost: {}", best_cost);
+        println!("Scan final cost: {}", best_cost);
 
         (best_cost, best_mapping)
     }
@@ -808,6 +875,26 @@ impl Grid {
 
 }
 
+impl fmt::Display for Grid {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let mut final_output = String::new();
+        writeln!(f, "{} x {} grid", self.x, self.y);
+        let inverse_map = self.inverse(&self.map_mod2bin);
+
+        for y in 0..self.y {
+            for x in 0..self.x {
+                let bin = self.grid_index(x, y);
+                write!(f, "{:3}[{:3}] ", inverse_map[bin], bin);
+                //print!("{:3} ", inverse_map[bin]);
+            }
+            writeln!(f, "");
+        }
+        writeln!(f, "Total cost: {}", self.grid_cost(&self.map_mod2bin));
+
+        Ok(())
+    }
+}
+
 pub struct ModulePosition {
     pub x: f32,
     pub y: f32,
@@ -938,7 +1025,7 @@ struct Node {
 pub fn grid_test_hv()
 {
     let xdim = 8;
-    let ydim = 5;
+    let ydim = 6;
 
     let mut g = Grid::new(xdim, ydim);
     for x in 0..xdim {
@@ -959,12 +1046,25 @@ pub fn grid_test_hv()
     g.scramble(1, 1, xdim - 1, ydim - 1);
     g.print(&g.map_mod2bin);
     
+    let mut limits = ScanLimits {
+        llx: 1,
+        lly: 1,
+        urx: xdim - 1,
+        ury: ydim - 1,
+        };
+
     let (c, map) = g.opt_v(1, 1, xdim - 1, ydim - 1);
     g.print(&map);
     g.map_mod2bin = map;
     let (c, map) = g.opt_h(1, 1, xdim - 1, ydim - 1);
     g.print(&map);
     g.map_mod2bin = map;
+
+    println!("Churn!");
+    let (c, map) = g.opt_churn_h(limits);
+    g.print(&map);
+
+
     let (c, map) = g.opt_v(1, 1, xdim - 1, ydim - 1);
     g.print(&map);
     g.map_mod2bin = map;    
@@ -974,6 +1074,12 @@ pub fn grid_test_hv()
     let (c, map) = g.opt_v(1, 1, xdim - 1, ydim - 1);
     g.print(&map);
     g.map_mod2bin = map;    
+
+    println!("Churn!");
+    let (c, map) = g.opt_churn_h(limits);
+    g.print(&map);
+
+
     let (c, map) = g.opt_h(1, 1, xdim - 1, ydim - 1);
     g.print(&map);
     g.map_mod2bin = map;            
@@ -988,7 +1094,11 @@ pub fn grid_test_hv()
     g.map_mod2bin = map;    
     let (c, map) = g.opt_h(1, 1, xdim - 1, ydim - 1);
     g.print(&map);
-    g.map_mod2bin = map;        
+    g.map_mod2bin = map;   
+
+    println!("Churn!");
+    let (c, map) = g.opt_churn_h(limits);
+    g.print(&map);
 }
 
 pub fn grid_test_analytic() {
@@ -1025,8 +1135,8 @@ pub fn grid_test_analytic() {
 }
 
 pub fn grid_test_scan() {
-    let xdim = 8;
-    let ydim = 8;
+    let xdim = 16;
+    let ydim = 16;
 
     let mut g = Grid::new(xdim, ydim);
     for x in 0..xdim {
@@ -1050,36 +1160,37 @@ pub fn grid_test_scan() {
     let lim = ScanLimits{
         llx: 1,
         lly: 1,
-        urx: 7,
-        ury: 7,
+        urx: xdim - 1,
+        ury: ydim - 1,
     };
-    let window_h = ScanWindow{
-        width: 8,
-        height: 4,
+    let window = ScanWindow{
+        layer_width: 4,
+        depth: 8,
     };
     let step = ScanStep {
         dx: 2,
         dy: 2,
     };
-    let window_v = ScanWindow {
-        width: 4,
-        height: 8,
-    };
-    g.opt_scan(lim, window_v, step, true);
-    g.print(&g.map_mod2bin);
 
-    g.opt_scan(lim, window_h, step, false);
-    g.print(&g.map_mod2bin);
+    for passes in 0..10 {
+        println!("Pass {}", passes);
+        g.opt_scan(lim, window, step, true);
+        g.print(&g.map_mod2bin);
 
-    g.opt_scan(lim, window_v, step, true);
-    g.print(&g.map_mod2bin);
+        g.opt_churn_h(lim);
+        g.print(&g.map_mod2bin);
 
-    g.opt_scan(lim, window_h, step, false);
-    g.print(&g.map_mod2bin);    
+        g.opt_scan(lim, window, step, false);
+        g.print(&g.map_mod2bin);
+
+        g.opt_churn_v(lim);
+        g.print(&g.map_mod2bin);
+    }  
 
 }
 
 pub fn grid_test () {
-    // grid_test_hv();
-    grid_test_analytic();
+    grid_test_scan();
+    // grid_test_analytic();
+
 }

@@ -5,11 +5,18 @@ mod grid;
 
 fn main() {
     println!("Hill climbing with trees demo!  Basic Ferry Loading!");
-    println!("PSTools version {}", pstools_r::psversion());
+    // println!("PSTools version {}", pstools_r::psversion());
     // crate::lib::hcwt_test();
-    hcwt_r::hcwt_test();
-
+    // hcwt_r::hcwt_test();
     // let g = grid::Grid::new(4, 5);
+    // let order = grid::perms(4, 6);
+    // grid::print_permutations(&order);
+    grid::grid_test();
+
+}
+
+
+fn ferry_test() {
 
     let mut ferry_root = FerryNode {
         left_length: 0,
@@ -64,11 +71,6 @@ fn main() {
         println!("Node {} {}  (parent {})", node.detail.left_length, node.detail.right_length, node.parent);
         trace(&ferry_problem, level, i);
     }
-
-    // let order = grid::perms(4, 6);
-    // grid::print_permutations(&order);
-    grid::grid_test();
-
 }
 
 

@@ -203,3 +203,21 @@ on modules.  Should make the code a little more
 clear and less debug-challenging when integrating
 with the standard cell/mixed-size placer.
 
+### 20241130
+
+Have the window for scans modified to use
+layer_width and depth, and then opt_scan uses
+the appropriate dimensions (avoid cases where
+I generate a zillion different permutations
+on a wide level).  Also have basic churn running.
+On a 16x16 scramble, optimal cost is 480, and
+a simple run with multiple passes gets down
+to 856 from an initial 4074.  So much of the
+way there.  Still hit a local optima, but not
+too damn shabby.
+
+Compare against conventional small window -- should
+be no contest.  Maybe have a paper focusing on the
+churn effect for HCwT, and the run time impact.
+Focus on FPGAs?
+
