@@ -1,4 +1,7 @@
 use std::fmt;
+use std::fs::File;
+use std::io::Write;
+use std::path::Path;
 
 // Rearrangement of grid-mapped items
 //
@@ -84,6 +87,19 @@ pub struct Edge {
     pub a: usize,
     pub b: usize,
     pub weight: f32,
+}
+
+// The analytic placer accumulates forces
+// pulling/pushing each module in a particular
+// direction.  The net force will be divided
+// by the weight, and then a module moves a
+// certain percentage of distance towards that
+// desired location.
+#[derive(Copy, Clone)]
+struct Force {
+    x: f32,
+    y: f32,
+    weight: f32,
 }
 
 pub struct Permlist {
@@ -174,6 +190,26 @@ pub fn print_permutations(order: &Vec<Permlist>) {
         println!(" delta {}", tot_delta);
     }
 }
+
+fn analytic_force(x1: f32, y1: f32, x2: f32, y2: f32, distance: f32) -> (f32, f32, f32, f32, f32) {
+    let dx = x2 - x1;
+    let dy = y2 - y1;
+    if (dx.abs() > distance) || (dy.abs() > distance) {
+        return (0.0, 0.0, 0.0, 0.0, 0.0)
+    }
+    let d = (dx * dx + dy * dy).sqrt();
+
+    if d > distance {
+        return (0.0, 0.0, 0.0, 0.0, 0.0)
+    }
+
+    let mult = 20.0 * (1.0 - (d/distance));
+
+    let midx = (x1 + x2)/2.0;
+    let midy = (y1 + y2)/2.0;
+
+    ( x1 - mult*dx, y1 - mult*dy, x2 + mult*dx, y2 + mult*dy, 1.0)
+}
 impl Grid {
     pub fn new(x: usize, y: usize)-> Grid {
         let count = (x * y) as usize;
@@ -211,6 +247,22 @@ impl Grid {
             }
         }
         g
+    }
+
+    pub fn save(&self, filepath: String) {
+        let mut f = File::create(filepath).unwrap();
+        writeln!(&mut f, "{} {}", self.x, self.y).unwrap();
+        for b in 0..self.bins.len() {
+            writeln!(&mut f, "{} {} {}", self.map_mod2bin[b], self.bins[b].x, self.bins[b].y).unwrap();
+        }
+        writeln!(&mut f, "{}", self.edges.len()).unwrap();
+        for e in &self.edges {
+            writeln!(&mut f, "{} {}  {}", e.a, e.b, e.weight).unwrap();
+        }
+    }
+
+    pub fn load(filepath: String) -> Grid {
+        Grid::new(16, 16)
     }
 
     pub fn grid_index(&self, x: usize, y: usize) -> usize {
@@ -692,15 +744,15 @@ impl Grid {
     }
 
     pub fn analytic_assign(&mut self, limits: ScanLimits, locations: Vec<ModuleAssign>, map: &mut Vec<usize>) {
-        println!("Analytic assign {},  {} entries", limits, locations.len());
+        // println!("Analytic assign {},  {} entries", limits, locations.len());
         let dx = limits.urx - limits.llx;
         let dy = limits.ury - limits.lly;
-        println!("  DX*DY = {}", dx * dy);
+        // println!("  DX*DY = {}", dx * dy);
 
         if dx == 1 && dy == 1 {
             // End case -- assign the remaining module to the bin
             let idx = self.grid_index(limits.llx, limits.lly);
-            println!("Assign module {} at {} {} to bin {} {} ({} {})", locations[0].module, locations[0].x, locations[0].y, limits.llx, limits.lly, self.bins[idx].x, self.bins[idx].y);
+            // println!("Assign module {} at {} {} to bin {} {} ({} {})", locations[0].module, locations[0].x, locations[0].y, limits.llx, limits.lly, self.bins[idx].x, self.bins[idx].y);
             self.map_mod2bin[locations[0].module] = idx;
             return;
         }
@@ -722,15 +774,15 @@ impl Grid {
             let mut higher = limits;
             higher.lly = sp;
             let n = (lower.urx - lower.llx)*(lower.ury - lower.lly);
-            println!("SplitH {} to {} {}  with n=={}", limits, lower, higher, n);
+            // println!("SplitH {} to {} {}  with n=={}", limits, lower, higher, n);
             let mut sl1 = Vec::new();
             let mut sl2 = Vec::new();
             for i in 0..sublocations.len() {
                 if i < n {
-                    println!("  Mod {}   {} {} lower", sublocations[i].module, sublocations[i].x, sublocations[i].y);
+                    // println!("  Mod {}   {} {} lower", sublocations[i].module, sublocations[i].x, sublocations[i].y);
                     sl1.push(sublocations[i]);
                 } else {
-                    println!("  Mod {}   {} {} higher", sublocations[i].module, sublocations[i].x, sublocations[i].y);                    
+                    // println!("  Mod {}   {} {} higher", sublocations[i].module, sublocations[i].x, sublocations[i].y);                    
                     sl2.push(sublocations[i]);
                 }
             }
@@ -747,13 +799,13 @@ impl Grid {
             let n = (left.urx - left.llx)*(left.ury - left.lly);
             let mut sl1 = Vec::new();
             let mut sl2 = Vec::new();
-            println!("SplitV {} to {} {}  with n=={}", limits, left, right, n);
+            // println!("SplitV {} to {} {}  with n=={}", limits, left, right, n);
             for i in 0..sublocations.len() {
                 if i < n {
-                    println!("  Mod {}   {} {} left", sublocations[i].module, sublocations[i].x, sublocations[i].y);
+                    // println!("  Mod {}   {} {} left", sublocations[i].module, sublocations[i].x, sublocations[i].y);
                     sl1.push(sublocations[i]);
                 } else {
-                    println!("  Mod {}   {} {} right", sublocations[i].module, sublocations[i].x, sublocations[i].y);
+                    // println!("  Mod {}   {} {} right", sublocations[i].module, sublocations[i].x, sublocations[i].y);
                     sl2.push(sublocations[i]);
                 }
             }
@@ -764,7 +816,7 @@ impl Grid {
         }
     }
 
-    pub fn grid_analytic(&mut self, limits: ScanLimits, scale: f32, alpha: f32, steps: u32) {
+    pub fn grid_analytic(&mut self, limits: ScanLimits, scale: f32, alpha: f32, steps: u32, min_distance: f32, steps_d: u32) {
         // Run through and find the modules that are within this window.
         let inverse_map = self.inverse(&self.map_mod2bin);
         let mut modules = Vec::new();
@@ -775,6 +827,12 @@ impl Grid {
             }
         }
         println!("{} modules being operated on by analytic engine", modules.len());
+
+        // How many edges go to fixed pads?
+        let mut pad_nets = 0;
+        for e in &self.edges {
+            // FIX ME.  Do we have enough pads?
+        }
 
         // Initialize module locations
         let mut locations = Vec::new();
@@ -791,6 +849,12 @@ impl Grid {
             });
         }
         // Initial net centers
+        let force = Force {
+            x: 0.0,
+            y: 0.0,
+            weight: 0.0,
+        };
+        let mut forces = vec![force; self.bins.len()];
 
         let modulenet = self.module_net();
         for step in 0..steps {
@@ -807,40 +871,104 @@ impl Grid {
                 });
                 // println!("Edge {} links modules {} to {}, center {} {}", i, self.edges[i].a, self.edges[i].b, cx, cy);
             }
-        
-            for module in &modules {
-                let mut x = 0.0;
-                let mut y = 0.0;
-                let mut weight = 0.0;
-                for edge_id in &modulenet[*module] {
-                    x = x + net_center[*edge_id].x;
-                    y = y + net_center[*edge_id].y;
-                    weight = weight + 1.0;
+            // Compute the forces
+            for f in &mut forces {
+                (*f).weight = 0.0;
+                (*f).x = 0.0;
+                (*f).y = 0.0;
+            }
+
+            // Pull into relative positons
+            if step <= steps_d {
+                for module in &modules {
+                    let mut x = 0.0;
+                    let mut y = 0.0;
+                    let mut weight = 0.0;
+                    for edge_id in &modulenet[*module] {
+                        x = x + net_center[*edge_id].x;
+                        y = y + net_center[*edge_id].y;
+                        weight = weight + 1.0;
+                    }
+                
+                    forces[*module].x = x;
+                    forces[*module].y = y;
+                    forces[*module].weight = weight;
                 }
+            }
+
+            // Use inter-module proximity to push apart
+            if step > steps_d {
+                println!("Step {} adding repulsive force", step);
+                let mut pst = pstools_r::PSTool::new();
+                pst.set_color(0.7, 0.7, 0.7, 1.0);
+                let bnd = (self.bins[1].x - self.bins[0].x)/3.0;
+                for bin in &self.bins {
+                    pst.add_box(bin.x - bnd, bin.y - bnd, bin.x + bnd, bin.y + bnd);
+                }
+                let bnd2 = bnd / 5.0;
+                pst.set_color(0.5, 0.5, 0.8, 1.0);
+                for module in &modules {
+                    pst.add_box(locations[*module].x - bnd2, locations[*module].y - bnd2, locations[*module].x + bnd2, locations[*module].y + bnd2);
+                }
+                pst.set_color(1.0, 0.0, 0.0, 1.0);
+                for e in &self.edges {
+                // Check the distance between two modules -- and if they're too close,
+                // add in some weight to push them apart
+                    let ax = locations[e.a].x;
+                    let ay = locations[e.a].y;
+                    let bx = locations[e.b].x;
+                    let by = locations[e.b].x;
+                    let (dax,day, dbx, dby, w)  = analytic_force(ax, ay, bx, by, min_distance);
+                    if w > 0.0 {
+                        println!("Mod {} at {} {}, {} at {} {}, A {} {} B {} {}", e.a, ax, ay, e.b, bx, by, dax, day, dbx, dby);
+                    }
+                    forces[e.a].x = forces[e.a].x + dax;
+                    forces[e.a].y = forces[e.a].y + day;
+                    forces[e.a].weight = forces[e.a].weight + w;
+
+                    pst.add_line(ax, ay, ax + dax, ay + day);
+
+                    forces[e.b].x = forces[e.b].x + dbx;
+                    forces[e.b].y = forces[e.b].y + dby;
+                    forces[e.b].weight = forces[e.b].weight + w;
+
+                    pst.add_line(bx, by, bx + dbx, by + dby);
+                        
+                    }
+                    let fp = format!("force{:04}.ps", step);
+                    pst.generate(fp);
+                }
+            
+            for module in &modules {
+                let weight = forces[*module].weight;
+                let mut x = forces[*module].x;
+                let mut y = forces[*module].y;
+
                 if weight > 0.0 {
                     x = x / weight;
                     y = y / weight;
+
+                    let dx = x - locations[*module].x;
+                    let dy = y - locations[*module].y;
+                    let newx = locations[*module].x + alpha * dx;
+                    let newy = locations[*module].y + alpha * dy;
+                    locations[*module].x = newx;
+                    locations[*module].y = newy;
+                    locations[*module].history.push((newx,newy));
+                    // println!("Move module {} from {} {} to {} {}", module, locations[*module].x, locations[*module].y, newx, newy);                    
                 }
-                let dx = x - locations[*module].x;
-                let dy = y - locations[*module].y;
-                let newx = locations[*module].x + alpha * dx;
-                let newy = locations[*module].y + alpha * dy;
-                // println!("Move module {} from {} {} to {} {}", module, locations[*module].x, locations[*module].y, newx, newy);
-                locations[*module].x = newx;
-                locations[*module].y = newy;
-                locations[*module].history.push((newx,newy));
             }
         }
         let mut pst = pstools_r::PSTool::new();
-        pst.add_color(0.1, 0.1, 0.1, 1.0);
+        pst.set_color(0.1, 0.1, 0.1, 1.0);
         for c in &modules {
             pst.add_box(locations[*c].x - 5.0, locations[*c].y - 5.0, locations[*c].x + 5.0, locations[*c].y + 5.0);
 
         }
-        pst.add_color(1.0, 0.0, 0.0, 1.0);
-        println!("FINAL MOTION");
+        pst.set_color(1.0, 0.0, 0.0, 1.0);
+        // println!("FINAL MOTION");
         for module in &modules {
-            println!("module {} pos: {} {}", *module, locations[*module].x, locations[*module].y);
+            // println!("module {} pos: {} {}", *module, locations[*module].x, locations[*module].y);
             let mut px = 0.0;
             let mut py = 0.0;
             let mut first = true;
@@ -1130,7 +1258,7 @@ pub fn grid_test_analytic() {
         urx: xdim - 1,
         ury: ydim - 1, 
     };
-    g.grid_analytic(limits, 50.0, 0.3, 500);
+    g.grid_analytic(limits, 50.0, 0.3, 500, 1000.0, 510);
 
 }
 
@@ -1172,17 +1300,19 @@ pub fn grid_test_scan() {
         dy: 2,
     };
 
-    for passes in 0..10 {
+    for passes in 0..20 {
         println!("Pass {}", passes);
         g.opt_scan(lim, window, step, true);
         g.print(&g.map_mod2bin);
 
+        println!("Churn!");
         g.opt_churn_h(lim);
         g.print(&g.map_mod2bin);
 
         g.opt_scan(lim, window, step, false);
         g.print(&g.map_mod2bin);
 
+        println!("Churn!");
         g.opt_churn_v(lim);
         g.print(&g.map_mod2bin);
     }  

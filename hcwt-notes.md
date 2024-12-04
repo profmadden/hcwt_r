@@ -221,3 +221,17 @@ be no contest.  Maybe have a paper focusing on the
 churn effect for HCwT, and the run time impact.
 Focus on FPGAs?
 
+With more iterations, down to 760.  Damn.  It
+actually freakin' works.
+
+The analytic run should get us in the right
+ballpark, and then HCwT can dial it in.  Cross-bin
+repartitioning cleans up the clusters.  This could
+get a big win over the other tools.  Need to build
+the SHARP, and then go after ICCAD 04 IBM05.
+
+Might want to generate a PDF that shows distance
+from optimal (assuming it's a mesh).  Might give an
+idea of what sort of transformations might be
+effective.
+
