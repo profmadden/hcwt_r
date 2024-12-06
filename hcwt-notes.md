@@ -235,3 +235,16 @@ from optimal (assuming it's a mesh).  Might give an
 idea of what sort of transformations might be
 effective.
 
+### 20241205
+
+Started gridopt -- stand alone binary to load in 
+a grid, and then perform optimization.  There's a
+grid that will come in from the SHARP k-way cluster
+generation, need to work on the analytic engine and
+get that working nicely.
+
+Also, splitting things out into a separate analytic.rs,
+that should be stand-alone.  Grid will use that as
+a library, rather than something internal to the grid.
+Should be more useful in other applications.
+

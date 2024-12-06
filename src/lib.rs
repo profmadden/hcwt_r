@@ -57,6 +57,7 @@
 
 use pstools_r;
 pub mod grid;
+pub mod analytic;
 
 #[derive(Clone, Copy)]
 pub struct SelectionNode<NodeDetail> {

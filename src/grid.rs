@@ -1,7 +1,10 @@
-use std::fmt;
+use std::{fmt, io::BufReader};
+use scan_fmt::scan_fmt;
+
 use std::fs::File;
 use std::io::Write;
 use std::path::Path;
+
 
 // Rearrangement of grid-mapped items
 //
@@ -262,7 +265,29 @@ impl Grid {
     }
 
     pub fn load(filepath: String) -> Grid {
-        Grid::new(16, 16)
+        let f = File::open(filepath).unwrap();
+        let mut reader = BufReader::new(f);
+        let line = getline(&mut reader).unwrap();
+        let (dimx, dimy) = scan_fmt!(&line, "{} {}", usize, usize).unwrap();
+        println!("Loaded in grid that is {} {}", dimx, dimy);
+
+        let mut g = Grid::new(dimx, dimy);
+        for i in 0..g.bins.len() {
+            let line = getline(&mut reader).unwrap();
+            let (bn, x, y) = scan_fmt!(&line, "{} {} {}", usize, f32, f32).unwrap();
+            g.map_mod2bin[i] = bn;
+            g.bins[i].x = x;
+            g.bins[i].y = y;
+        }
+        let line = getline(&mut reader).unwrap();
+        let ne = scan_fmt!(&line, "{}", usize).unwrap();
+        for edge in 0..ne {
+            let line = getline(&mut reader).unwrap();
+            let (a, b, weight) = scan_fmt!(&line, "{} {} {}", usize, usize, f32).unwrap();
+            g.add_edge_idx(a, b, weight);
+        }
+
+        g
     }
 
     pub fn grid_index(&self, x: usize, y: usize) -> usize {
@@ -816,6 +841,24 @@ impl Grid {
         }
     }
 
+    pub fn save_analytic(&self, limits: ScanLimits, filename: String) {
+        let mut f = File::create(filename).unwrap();
+        let d = self.bins[1].x - self.bins[0].x;
+        writeln!(&mut f, "{} {} {}", self.bins.len(), self.edges.len(), d).unwrap();
+        for x in 0..self.x {
+            for y in 0..self.y {
+                let idx = self.grid_index(x, y);
+                let module = self.map_mod2bin[idx];
+                let mut fixed = 0;
+                if (x < limits.llx) || (x >= limits.urx) || (y < limits.lly) || (y >= limits.ury) {fixed = 1;}
+                writeln!(&mut f, "{} {} {} {} {}", module, self.bins[module].x, self.bins[module].y, 1.0, fixed).unwrap();
+            }
+        }
+        for e in &self.edges {
+            writeln!(&mut f, "{} {}  {}  0.0 1", e.a, e.b, e.weight).unwrap();
+        }
+    }
+
     pub fn grid_analytic(&mut self, limits: ScanLimits, scale: f32, alpha: f32, steps: u32, min_distance: f32, steps_d: u32) {
         // Run through and find the modules that are within this window.
         let inverse_map = self.inverse(&self.map_mod2bin);
@@ -1323,4 +1366,31 @@ pub fn grid_test () {
     grid_test_scan();
     // grid_test_analytic();
 
+}
+
+use std::io::BufRead;
+use std::io::Error;
+use std::io::ErrorKind;
+fn getline(reader: &mut BufReader<File>) -> std::io::Result<String> {
+    loop {
+        let mut line = String::new();
+        let _len = reader.read_line(&mut line).unwrap();
+        // println!("Read in {} bytes, line {}", _len, line);
+
+        if _len == 0 {
+            return std::result::Result::Err(Error::new(ErrorKind::Other, "end of file"));
+        }
+
+        if line.starts_with("#") {
+            // println!("Skip comment.");
+            continue;
+        }
+
+        if _len == 1 {
+            continue;
+        }
+
+        return Ok(line.trim().to_string());
+    }
+    // Error::new(ErrorKind::Other, "Not reachable FILE IO error");
 }

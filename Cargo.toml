@@ -6,3 +6,9 @@ edition = "2021"
 [dependencies]
 pstools_r = {git = "https://github.com/profmadden/pstools_r"}
 rand = "0.8.5"
+scan_fmt = "0.2.6"
+
+[[bin]]
+name = "gridopt"
+path = "src/bin/gridopt.rs"
+
