@@ -855,8 +855,66 @@ impl Grid {
             }
         }
         for e in &self.edges {
-            writeln!(&mut f, "{} {}  {}  0.0 1", e.a, e.b, e.weight).unwrap();
+            writeln!(&mut f, "{} {} {} 0 1", e.a, e.b, e.weight).unwrap();
         }
+    }
+
+
+    pub fn grid_analytic2(&mut self, limits: ScanLimits, scale: f32, alpha: f32, steps: u32, min_distance: f32, steps_d: u32) {
+        let mut a = analytic::Analytic::new(self.bins.len());
+        let mut i = 0;
+        a.threshold = self.bins[1].x - self.bins[0].x;
+
+        for x in 0..self.x {
+            for y in 0..self.y {
+                let idx = self.grid_index(x, y);
+                let module = self.map_mod2bin[idx];
+                a.nodes[i].tag = module;
+                a.nodes[i].location = analytic::Point {
+                    x: self.bins[module].x,
+                    y: self.bins[module].y,
+                };
+                a.nodes[i].mass = 1.0;
+                let mut fixed = false;
+                if (x < limits.llx) || (x >= limits.urx) || (y < limits.lly) || (y >= limits.ury) {fixed = true;}
+                a.nodes[i].fixed = fixed;
+                i = i + 1;
+            }
+        }
+        for e in &self.edges {
+            a.add_force(e.a, e.b, e.weight, 0.0, true);
+        }
+        a.save("analytic2.ana".to_string());
+        a.postscript("initial2.ps".to_string());
+        for i in 0..100 {
+           a.solver_step(0.1, 0.0);
+        }
+        a.postscript("anaforce2.ps".to_string());
+        // Now add repulsion edges
+        for i in 0..a.nodes.len() {
+           for j in i+1..a.nodes.len() {
+               a.add_force(i, j, 1000.0, a.threshold*0.6, false);
+            }
+        }
+        for i in 0..100 {
+            a.solver_step(0.5, i as f32 * 0.01);
+        }
+        a.postscript("anarepulse2.ps".to_string());
+        for i in 0..100 {
+            a.solver_step(0.7, 1.0);
+        }
+        a.postscript("anarepulse-final2.ps".to_string());
+        
+        let mut modules = Vec::new();
+        let inverse_map = self.inverse(&self.map_mod2bin);
+        for x in limits.llx..limits.urx {
+            for y in limits.lly..limits.ury {
+                modules.push(inverse_map[self.grid_index(x, y)]);
+            }
+        }
+
+
+        
     }
 
     pub fn grid_analytic(&mut self, limits: ScanLimits, scale: f32, alpha: f32, steps: u32, min_distance: f32, steps_d: u32) {

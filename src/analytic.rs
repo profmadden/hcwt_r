@@ -4,6 +4,7 @@ use std::{fmt, io::BufReader};
 use scan_fmt::scan_fmt;
 
 use std::fs::File;
+use std::io::Write;
 use pstools_r;
 
 #[derive(Copy, Clone)]
@@ -107,6 +108,28 @@ impl Analytic {
 
         a
     }
+    pub fn save(&self, filename: String) {
+        let mut f = File::create(filename).unwrap();
+        writeln!(&mut f, "{} {} {}", self.nodes.len(), self.edges.len(), self.threshold).unwrap();
+        for n in &self.nodes {
+            let fixed;
+            if n.fixed {
+                fixed = 1;
+            } else {
+                fixed = 0;
+            }
+            writeln!(f, "{} {} {} {} {}", n.tag, n.location.x, n.location.y, n.mass, fixed).unwrap();
+        }
+        for e in &self.edges {
+            let attract;
+            if e.attract {
+                attract = 1;
+            } else {
+                attract = 0;
+            }
+            writeln!(f, "{} {} {} {} {}", e.a, e.b, e.weight, e.threshold, attract).unwrap();
+        }
+    }
     pub fn add_force(&mut self, a: usize, b: usize, weight: f32, threshold: f32, attract: bool) {
         self.edges.push(Edge {
             a: a,
@@ -116,7 +139,7 @@ impl Analytic {
             attract: attract,
         });
     }
-    pub fn solver_step(&mut self, alpha: f32) {
+    pub fn solver_step(&mut self, alpha: f32, rweight: f32) {
         let f = Force {x: 0.0, y: 0.0, weight: 0.0};
         let mut forces = vec![f; self.nodes.len()];
 
@@ -131,9 +154,12 @@ impl Analytic {
                 if fm < e.threshold {
                     // println!("Distance {}, will repulse", fm);
                     fm = fm - e.threshold;
+                    fm = fm * rweight;
                 } else {
                     fm = 0.0;
                 }
+            } else {
+                fm = fm * (1.0 - rweight);
             }
 
             forces[e.a].x = forces[e.a].x - dx * fm * e.weight;
@@ -231,7 +257,7 @@ pub fn analytic_test() {
     
     a.postscript("initial.ps".to_string());
     for i in 0..200 {
-        a.solver_step(0.1);
+        a.solver_step(0.1, 0.0);
     }
     a.postscript("analytic.ps".to_string());
 
@@ -244,7 +270,7 @@ pub fn analytic_test_file(filename: String) {
       
     a.postscript("initial.ps".to_string());
     for i in 0..200 {
-        a.solver_step(0.1);
+        a.solver_step(0.1, 0.0);
     }
     a.postscript("analytic.ps".to_string());
 }
