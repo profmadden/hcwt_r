@@ -360,7 +360,7 @@ impl Grid {
         println!("{} x {} grid", self.x, self.y);
         let inverse_map = self.inverse(map);
 
-        for y in 0..self.y {
+        for y in (0..self.y).rev() {
             for x in 0..self.x {
                 let bin = self.grid_index(x, y);
                 print!("{:3}[{:3}] ", inverse_map[bin], bin);
@@ -768,7 +768,7 @@ impl Grid {
         (best_cost, best_mapping)
     }
 
-    pub fn analytic_assign(&mut self, limits: ScanLimits, locations: Vec<ModuleAssign>, map: &mut Vec<usize>) {
+    pub fn analytic_assign(&mut self, limits: ScanLimits, locations: Vec<ModuleAssign>, map_do_we_use: &mut Vec<usize>) {
         // println!("Analytic assign {},  {} entries", limits, locations.len());
         let dx = limits.urx - limits.llx;
         let dy = limits.ury - limits.lly;
@@ -777,7 +777,7 @@ impl Grid {
         if dx == 1 && dy == 1 {
             // End case -- assign the remaining module to the bin
             let idx = self.grid_index(limits.llx, limits.lly);
-            // println!("Assign module {} at {} {} to bin {} {} ({} {})", locations[0].module, locations[0].x, locations[0].y, limits.llx, limits.lly, self.bins[idx].x, self.bins[idx].y);
+            println!("Assign module {} at {} {} to bin {} {} [{}] ({} {})", locations[0].module, locations[0].x, locations[0].y, limits.llx, limits.lly, idx, self.bins[idx].x, self.bins[idx].y);
             self.map_mod2bin[locations[0].module] = idx;
             return;
         }
@@ -811,8 +811,8 @@ impl Grid {
                     sl2.push(sublocations[i]);
                 }
             }
-            self.analytic_assign(lower, sl1, map);
-            self.analytic_assign( higher, sl2, map);
+            self.analytic_assign(lower, sl1, map_do_we_use);
+            self.analytic_assign( higher, sl2, map_do_we_use);
         } else {
             // Split things vertically, sort things by x axis
             sublocations.sort_by_key(|a| (a.x * 100.0) as i32);
@@ -834,8 +834,8 @@ impl Grid {
                     sl2.push(sublocations[i]);
                 }
             }
-            self.analytic_assign(left, sl1, map);
-            self.analytic_assign(right, sl2, map);
+            self.analytic_assign(left, sl1, map_do_we_use);
+            self.analytic_assign(right, sl2, map_do_we_use);
 
 
         }
@@ -862,59 +862,109 @@ impl Grid {
 
     pub fn grid_analytic2(&mut self, limits: ScanLimits, scale: f32, alpha: f32, steps: u32, min_distance: f32, steps_d: u32) {
         let mut a = analytic::Analytic::new(self.bins.len());
-        let mut i = 0;
+        // let mut i = 0;
         a.threshold = self.bins[1].x - self.bins[0].x;
 
+        let inverse_map = self.inverse(&self.map_mod2bin);
         for x in 0..self.x {
             for y in 0..self.y {
                 let idx = self.grid_index(x, y);
-                let module = self.map_mod2bin[idx];
-                a.nodes[i].tag = module;
-                a.nodes[i].location = analytic::Point {
+                let module = inverse_map[idx];
+                a.nodes[module].tag = module;
+                a.nodes[module].location = analytic::Point {
                     x: self.bins[module].x,
                     y: self.bins[module].y,
                 };
-                a.nodes[i].mass = 1.0;
+                a.nodes[module].mass = 1.0;
                 let mut fixed = false;
                 if (x < limits.llx) || (x >= limits.urx) || (y < limits.lly) || (y >= limits.ury) {fixed = true;}
-                a.nodes[i].fixed = fixed;
-                i = i + 1;
+                a.nodes[module].fixed = fixed;
+                // i = i + 1;
             }
         }
         for e in &self.edges {
             a.add_force(e.a, e.b, e.weight, 0.0, true);
         }
+        println!("ANALYTIC SOLVER initial cost {}", a.solution_cost());
+
         a.save("analytic2.ana".to_string());
         a.postscript("initial2.ps".to_string());
-        for i in 0..100 {
-           a.solver_step(0.1, 0.0);
+        for i in 0..200 {
+           a.solver_step(0.3, 0.0);
         }
+        println!("ANALYTIC SOLVER force cost {}", a.solution_cost());
         a.postscript("anaforce2.ps".to_string());
+        
         // Now add repulsion edges
         for i in 0..a.nodes.len() {
            for j in i+1..a.nodes.len() {
                a.add_force(i, j, 1000.0, a.threshold*0.6, false);
             }
         }
+        
         for i in 0..100 {
-            a.solver_step(0.5, i as f32 * 0.01);
+            a.solver_step(0.2, i as f32 * 0.01);
         }
         a.postscript("anarepulse2.ps".to_string());
+        println!("ANALYTIC SOLVER repulse cost {}", a.solution_cost());
         for i in 0..100 {
-            a.solver_step(0.7, 1.0);
+            a.solver_step(0.4, 1.0);
         }
-        a.postscript("anarepulse-final2.ps".to_string());
         
+        a.postscript("anarepulse-final2.ps".to_string());
+        println!("ANALYTIC SOLVER repulse final cost {}", a.solution_cost());
+
         let mut modules = Vec::new();
-        let inverse_map = self.inverse(&self.map_mod2bin);
+        
         for x in limits.llx..limits.urx {
             for y in limits.lly..limits.ury {
                 modules.push(inverse_map[self.grid_index(x, y)]);
             }
         }
+        let mut modassign = Vec::new();
+        for n in &a.nodes {
+            if !n.fixed {
+                modassign.push(ModuleAssign {
+                    x: n.location.x,
+                    y: n.location.y,
+                    module: n.tag,
+                });
+            }
+        }
+        let mut themap = Vec::new();
+        self.analytic_assign(limits, modassign, &mut themap);
+        println!("ANALYTIC SOLVER mapped assigned cost {}", a.solution_cost());
 
+        // self.map_mod2bin = themap;
+        for node in &mut a.nodes {
+            let m = node.tag;
+            let b = &self.bins[self.map_mod2bin[m]];
+            node.history.truncate(0);
+            node.history.push(analytic::Point{x: node.location.x, y: node.location.y});
+            node.history.push(analytic::Point{x: b.x, y: b.y});
+            node.location.x = b.x;
+            node.location.y = b.y;
+        }
+        println!("ANALYTIC SOLVER snap to place cost {}", a.solution_cost());
+        a.print_edge_costs();
+
+        println!("ANALYTIC SOLVER mapped back to grid");
+        self.print(&self.map_mod2bin);
+        self.print_edge_costs();
+
+        a.postscript("anamapped.ps".to_string());
 
         
+    }
+
+    pub fn print_edge_costs(&self)
+    {
+        for e in &self.edges {
+            let b1 = &self.bins[self.map_mod2bin[e.a]];
+            let b2 = &self.bins[self.map_mod2bin[e.b]];
+
+            println!("GE [{}] {} {} -- [{}] {} {} wt {}", e.a, b1.x, b1.y, e.b, b2.x, b2.y, e.weight);
+        }
     }
 
     pub fn grid_analytic(&mut self, limits: ScanLimits, scale: f32, alpha: f32, steps: u32, min_distance: f32, steps_d: u32) {
@@ -1096,7 +1146,6 @@ impl Grid {
         }
         let mut themap = Vec::new();
         self.analytic_assign(limits, modassign, &mut themap);
-
     }
 
 

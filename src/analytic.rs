@@ -130,6 +130,29 @@ impl Analytic {
             writeln!(f, "{} {} {} {} {}", e.a, e.b, e.weight, e.threshold, attract).unwrap();
         }
     }
+
+    pub fn solution_cost(&self) -> f32 {
+        let mut total = 0.0;
+        for e in &self.edges {
+            if e.attract {
+                let dx = (self.nodes[e.a].location.x - self.nodes[e.b].location.x).abs();
+                let dy = (self.nodes[e.a].location.y - self.nodes[e.b].location.y).abs();
+                total = total + (dx + dy)*e.weight;
+            }
+        }
+
+        total
+    }
+
+    pub fn print_edge_costs(&self) {
+        for e in &self.edges {
+            if e.attract {
+                let na = &self.nodes[e.a];
+                let nb = &self.nodes[e.b];
+                println!("AE [{}] {} {} == [{}] {} {} wt {}", e.a, na.location.x, na.location.y, e.b, nb.location.x, nb.location.y, e.weight);
+            }
+        }      
+    }
     pub fn add_force(&mut self, a: usize, b: usize, weight: f32, threshold: f32, attract: bool) {
         self.edges.push(Edge {
             a: a,
@@ -214,6 +237,10 @@ impl Analytic {
                     pst.add_line(h[j - 1].x, h[j - 1].y, h[j].x, h[j].y);
                 }
             }
+        }
+        pst.set_color(1.0, 0.3, 0.3, 1.0);
+        for i in 0..self.nodes.len() {
+            pst.add_text(self.nodes[i].location.x, self.nodes[i].location.y, format!("{}", self.nodes[i].tag));
         }
         pst.generate(filename);
     }

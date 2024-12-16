@@ -157,8 +157,59 @@ impl <UserContext,DecisionDetail,NodeDetail> HCwT<UserContext,DecisionDetail,Nod
         self.levels.push(d);
     }
 
+    
+
+}
+pub struct Permlist {
+    pub items: Vec<usize>,
 }
 
+pub fn gen_permutation(items: &Vec<usize>, taken: &mut Vec<bool>, decided: &mut Vec<usize>, delta: u32, max_delta: u32, order: &mut Vec<Permlist>) {
+    if delta > max_delta {
+        return
+    }
+    
+    if decided.len() == items.len() {
+        order.push(Permlist {
+            items: decided.clone(),
+        });        
+    } else {
+        for i in 0..items.len() {
+            if !taken[i] {
+                let i1 = i as i32;
+                let i2 = decided.len() as i32;
+                let increase = (i2 - i1).abs() as u32;
+
+                // Take item i, put it into the decided list, recurse
+                decided.push(items[i]);
+                taken[i] = true;
+                
+                gen_permutation(items, taken, decided, delta + increase, max_delta, order);
+                // Remove this element
+                taken[i] = false;
+                decided.pop();
+            }
+        }
+    }
+}
+
+//  When doing permutations -- limit to 6 or less?
+pub fn perms(n: u32, max_delta: u32) -> Vec<Permlist> {
+    if n > 6 {
+        println!("REQUESTED {} permutations?", n);
+    }
+    let mut items = Vec::new();
+    let mut taken = Vec::new();
+    let mut order = Vec::new();
+    let mut decided = Vec::new();
+    for i in 0..n {
+        items.push(i as usize);
+        taken.push(false);
+    }
+    gen_permutation(&items, &mut taken, &mut decided, 0, max_delta, &mut order);
+
+    order
+}
 pub fn generate(_hcwt: &HCwT<u32, Context,u32>, _context:&Context, _level: usize, _des: &mut Vec<SelectionNode<u32>>) -> f32 {
     // nodes.push(0);
     3.3
