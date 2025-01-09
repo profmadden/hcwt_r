@@ -7,6 +7,7 @@ mod analytic;
 
 fn main() {
     println!("Hill climbing with trees demo!  Basic Ferry Loading!");
+    ferry_test();
     // println!("PSTools version {}", pstools_r::psversion());
     // crate::lib::hcwt_test();
     // hcwt_r::hcwt_test();
@@ -15,15 +16,15 @@ fn main() {
     // grid::print_permutations(&order);
     // grid::grid_test();
     // analytic::analytic_test();
-    let dim = 10;
-    let mut g = grid::Grid::new_mesh(dim, dim);
-    let limits = ScanLimits{llx: 1, lly: 1, urx: dim - 1, ury: dim - 1};
-    g.scramble(limits.llx, limits.lly,limits.urx, limits.ury);
-    g.print(&g.map_mod2bin);
-    g.save_analytic(limits, "mesh.ana".to_string());
+    // let dim = 10;
+    // let mut g = grid::Grid::new_mesh(dim, dim);
+    // let limits = ScanLimits{llx: 1, lly: 1, urx: dim - 1, ury: dim - 1};
+    // g.scramble(limits.llx, limits.lly,limits.urx, limits.ury);
+    // g.print(&g.map_mod2bin);
+    // g.save_analytic(limits, "mesh.ana".to_string());
 
     // analytic::analytic_test_file("testcase.ana".to_string());
-    analytic::analytic_test_file("mesh.ana".to_string());
+    // analytic::analytic_test_file("mesh.ana".to_string());
 
 }
 
