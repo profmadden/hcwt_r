@@ -12,3 +12,6 @@ scan_fmt = "0.2.6"
 name = "gridopt"
 path = "src/bin/gridopt.rs"
 
+[[bin]]
+name = "ferry"
+path = "src/bin/ferry.rs"
