@@ -55,7 +55,7 @@
 // the index of the parent node that it's derived from.
 // Ignore the parent link in any node at level 0.
 
-use pstools_r;
+use pstools;
 pub mod grid;
 pub mod analytic;
 
@@ -247,6 +247,6 @@ pub fn hcwt_test () {
     solver.foo();
     */
 
-    println!("Calling PSTOOLS from hcwt_r: {}", pstools_r::psversion());
+    // println!("Calling PSTOOLS from hcwt_r: {}", pstools:
 
 }

@@ -1,5 +1,5 @@
 use grid::ScanLimits;
-use pstools_r;
+use pstools;
 // mod lib;
 use hcwt_r::{*};
 mod grid;

@@ -5,7 +5,7 @@ use scan_fmt::scan_fmt;
 
 use std::fs::File;
 use std::io::Write;
-use pstools_r;
+use pstools;
 
 #[derive(Copy, Clone)]
 pub struct Point {
@@ -211,7 +211,7 @@ impl Analytic {
         }
     }
     pub fn postscript(&self, filename: String) {
-        let mut pst = pstools_r::PSTool::new();
+        let mut pst = pstools::PSTool::new();
         let mut dim = 1.0;
         if self.threshold != 0.0 {
             pst.set_scale(200.0/self.threshold); 

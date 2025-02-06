@@ -55,7 +55,7 @@ use std::path::Path;
 //
 // Probably overthinking this -- it should be plenty fast
 // enough.  
-use pstools_r;
+use pstools;
 use rand::Rng;
 use crate::{*};
 
@@ -1050,7 +1050,7 @@ impl Grid {
             // Use inter-module proximity to push apart
             if step > steps_d {
                 println!("Step {} adding repulsive force", step);
-                let mut pst = pstools_r::PSTool::new();
+                let mut pst = pstools::PSTool::new();
                 pst.set_color(0.7, 0.7, 0.7, 1.0);
                 let bnd = (self.bins[1].x - self.bins[0].x)/3.0;
                 for bin in &self.bins {
@@ -1110,7 +1110,7 @@ impl Grid {
                 }
             }
         }
-        let mut pst = pstools_r::PSTool::new();
+        let mut pst = pstools::PSTool::new();
         pst.set_color(0.1, 0.1, 0.1, 1.0);
         for c in &modules {
             pst.add_box(locations[*c].x - 5.0, locations[*c].y - 5.0, locations[*c].x + 5.0, locations[*c].y + 5.0);
