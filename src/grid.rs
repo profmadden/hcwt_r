@@ -522,7 +522,7 @@ impl Grid {
 
         let mut decs = Vec::new();
         decs.push(root_dec);
-        let mut hcwt: HCwT<Context, Decision,Node> = HCwT::new(c, decs, roots);
+        let mut hcwt: HCwT<Context, Decision,Node> = HCwT::new(decs, roots);
 
         // Now construct the levels        
         level = 1;
@@ -588,7 +588,8 @@ impl Grid {
             // println!("---traced mapping----");
             // self.print(&mapping);
 
-            let nn_cost = net_cost(&mapping,  &all_nets, &self.edges, &hcwt.user_context.grid.bins);
+            // let nn_cost = net_cost(&mapping,  &all_nets, &self.edges, &hcwt.user_context.grid.bins);
+            let nn_cost = net_cost(&mapping,  &all_nets, &self.edges, &share_c.grid.bins);
 
             if nn_cost <= best {
                 best = nn_cost;

@@ -31,12 +31,9 @@ fn main() {
 
 fn ferry_test() {
 
-    let mut ferry_root = FerryNode {
+    let ferry_root = FerryNode {
         left_length: 0,
         right_length: 0,
-    };
-    let fc = FerryContext {
-        maxlen: 6,
     };
 
     let dec = FerryDecision {
@@ -46,7 +43,7 @@ fn ferry_test() {
     root_dec.push(dec);
     let mut roots = Vec::new();
     roots.push(ferry_root);
-    let mut ferry_problem: hcwt_r::HCwT<FerryContext,FerryDecision,FerryNode> = hcwt_r::HCwT::new(fc, root_dec, roots);
+    let mut ferry_problem: hcwt_r::HCwT<FerryContext,FerryDecision,FerryNode> = hcwt_r::HCwT::new(root_dec, roots);
 
 
     let mut dx = ferry_problem.new_decision();
@@ -140,12 +137,12 @@ pub fn generate(hcwt: &HCwT<FerryContext,FerryDecision,FerryNode>, context: &mut
         new_node.right_length = new_node.right_length + detail.length;
     }
 
-    if new_node.left_length <= hcwt.user_context.maxlen && new_node.right_length <= hcwt.user_context.maxlen {
+    if new_node.left_length <= context.maxlen && new_node.right_length <= context.maxlen {
         nodes.push(SelectionNode{parent: parent_index, detail: new_node});
     }
 
 }
-pub fn filter(hcwt: &HCwT<FerryContext,FerryDecision,FerryNode>, context: &mut FerryContext, level: usize, nodes: &mut Vec<SelectionNode<FerryNode>>) -> Vec<SelectionNode<FerryNode>>
+pub fn filter(hcwt: &HCwT<FerryContext,FerryDecision,FerryNode>, _context: &mut FerryContext, _level: usize, nodes: &mut Vec<SelectionNode<FerryNode>>) -> Vec<SelectionNode<FerryNode>>
 {
     let mut result = Vec::new();
     nodes.sort_by_key(|item|(item.detail.left_length));
@@ -168,6 +165,6 @@ pub fn filter(hcwt: &HCwT<FerryContext,FerryDecision,FerryNode>, context: &mut F
     }
     result
 }
-pub fn display(hcwt: &HCwT<FerryContext,FerryDecision,FerryNode>, dec: FerryDecision, context: &mut FerryContext) {
+pub fn display(_hcwt: &HCwT<FerryContext,FerryDecision,FerryNode>, _dec: FerryDecision, _context: &mut FerryContext) {
     println!("Selection....");
 }

@@ -18,20 +18,24 @@
 
 // use bookshelf_r::point::Point as Point;
 
-// The detail for a DecisionOption is a struct
+// The detail for a Option is a struct
 // that provides the info that the cost function
 // will need.  For standard cell detail placement,
 // this would be the physical locations for each cell,
 // under any the provided permutation.
 //
 // Solver wil need
-//   CONTEXT struct -- used in the generator if needed,
-//   arbitrary info.  Is owned (to handle lifetime access).  Can
-//   contain a reference, if linking to something bigger.
+//   CONTEXT struct -- this is passed to the solver, and is
+//   mutable.  To make a decision, or evaluate an option, some
+//   information from the general context will likely be needed.
+//   For ferry loading, one might want to know the length of the ferry.
+//   For circuit placement, there could be a list of connecting nets.
 //
 //   OPTION struct -- contained in a decision, one of the things
 //   we might be able to do.  For Ferry Loading, there would be
-//   two options for each decision, placing the car left or right
+//   two options for each decision, placing the car left or right.
+//   Every decision will need at least one option.  A single option
+//   can generate an arbitrary number of nodes for the search tree.
 //
 //   NODE struct -- details about what has been decided, total
 //   running cost, etc., that's in the decision tree.  For
@@ -54,26 +58,32 @@
 // tree layers, each layer having a set of nodes.  Each node has
 // the index of the parent node that it's derived from.
 // Ignore the parent link in any node at level 0.
+//
+// Any given solution can be determined by tracing back up the
+// tree, using the parent index.
 
 use pstools;
 pub mod grid;
 pub mod analytic;
+use std::marker::PhantomData;
 
 #[derive(Clone, Copy)]
-pub struct SelectionNode<NodeDetail> {
+pub struct SelectionNode<Node> {
     pub parent: usize, // Index of the choice in the prior decision
-    pub detail: NodeDetail,
+    pub detail: Node,
 }
 
-pub struct Level<DecisionDetail,NodeDetail> {
-        pub decisions: Vec<DecisionDetail>,
-        pub nodes: Vec<SelectionNode<NodeDetail>>,
+pub struct Level<Option,Node> {
+        pub decisions: Vec<Option>,
+        pub nodes: Vec<SelectionNode<Node>>,
 }
 
-pub struct HCwT<UserContext,DecisionDetail,NodeDetail> {
-    pub user_context: UserContext,
-    pub levels: Vec<Level<DecisionDetail,NodeDetail>>,
-    // pub solution: HCwTSolution<NodeDetail>,
+
+// https://doc.rust-lang.org/std/marker/struct.PhantomData.html
+pub struct HCwT<Context,Option,Node> {
+    phantom_context: PhantomData<Context>, // Swap to PhantomData<Context>
+    pub levels: Vec<Level<Option,Node>>,
+    // pub solution: HCwTSolution<Node>,
     pub debug: u32,
 }
 
@@ -81,10 +91,11 @@ pub struct HCwT<UserContext,DecisionDetail,NodeDetail> {
 // Push decisions and options 
 // Create the solver, and we provide a struct
 // that gives additional information to the cost function.
-impl <UserContext,DecisionDetail,NodeDetail> HCwT<UserContext,DecisionDetail,NodeDetail> {
-    pub fn new(context: UserContext, decisions: Vec<DecisionDetail>, roots: Vec<NodeDetail>) -> HCwT<UserContext,DecisionDetail,NodeDetail> {
+impl <Context,Option,Node> HCwT<Context,Option,Node> {
+    pub fn new(decisions: Vec<Option>, roots: Vec<Node>) -> HCwT<Context,Option,Node> {
         let mut hc = HCwT {
-            user_context: context,
+            // user_context: context,
+            phantom_context: PhantomData,
             levels: Vec::new(),
             debug: 0,
         };
@@ -113,9 +124,9 @@ impl <UserContext,DecisionDetail,NodeDetail> HCwT<UserContext,DecisionDetail,Nod
     //  generate(&hcwt, level, decision_index, parent_node_index, new_list);
     //  filter(&hcwt, level, list) -> filtered_list
     pub fn solve(&mut self,
-                context: &mut UserContext,
-                 generate: &dyn Fn(&HCwT<UserContext,DecisionDetail,NodeDetail>, &mut UserContext, usize, usize, usize, &mut Vec<SelectionNode<NodeDetail>>),
-                 filter: &dyn Fn(&HCwT<UserContext,DecisionDetail,NodeDetail>, &mut UserContext, usize, &mut Vec<SelectionNode<NodeDetail>>) -> Vec<SelectionNode<NodeDetail>>)
+                context: &mut Context,
+                 generate: &dyn Fn(&HCwT<Context,Option,Node>, &mut Context, usize, usize, usize, &mut Vec<SelectionNode<Node>>),
+                 filter: &dyn Fn(&HCwT<Context,Option,Node>, &mut Context, usize, &mut Vec<SelectionNode<Node>>) -> Vec<SelectionNode<Node>>)
         {
         // Level 0 is the initialization -- so we start processing with level 1
         for level in 1..self.levels.len() {
@@ -144,16 +155,16 @@ impl <UserContext,DecisionDetail,NodeDetail> HCwT<UserContext,DecisionDetail,Nod
         }
         
     }
-    pub fn new_decision(&self) -> Level<DecisionDetail,NodeDetail> {
+    pub fn new_decision(&self) -> Level<Option,Node> {
         Level {
             decisions: Vec::new(),
             nodes: Vec::new(),
         }
     }
-    pub fn add_option(&self, d: &mut Level<DecisionDetail,NodeDetail>, detail: DecisionDetail) {
+    pub fn add_option(&self, d: &mut Level<Option,Node>, detail: Option) {
         d.decisions.push(detail);
     }
-    pub fn add_decision(&mut self, d: Level<DecisionDetail,NodeDetail>) {
+    pub fn add_decision(&mut self, d: Level<Option,Node>) {
         self.levels.push(d);
     }
 

@@ -22,7 +22,7 @@ fn ferry_test() {
     root_dec.push(dec);
     let mut roots = Vec::new();
     roots.push(ferry_root);
-    let mut ferry_problem: hcwt_r::HCwT<FerryContext,FerryDecision,FerryNode> = hcwt_r::HCwT::new(fc, root_dec, roots);
+    let mut ferry_problem: hcwt_r::HCwT<FerryContext,FerryDecision,FerryNode> = hcwt_r::HCwT::new(root_dec, roots);
 
 
     let mut dx = ferry_problem.new_decision();
@@ -116,7 +116,7 @@ pub fn generate(hcwt: &HCwT<FerryContext,FerryDecision,FerryNode>, context: &mut
         new_node.right_length = new_node.right_length + detail.length;
     }
 
-    if new_node.left_length <= hcwt.user_context.maxlen && new_node.right_length <= hcwt.user_context.maxlen {
+    if new_node.left_length <= context.maxlen && new_node.right_length <= context.maxlen {
         nodes.push(SelectionNode{parent: parent_index, detail: new_node});
     }
 
