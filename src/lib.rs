@@ -74,7 +74,7 @@ pub struct SelectionNode<Node> {
 }
 
 pub struct Level<Option,Node> {
-        pub decisions: Vec<Option>,
+        pub options: Vec<Option>,
         pub nodes: Vec<SelectionNode<Node>>,
 }
 
@@ -100,7 +100,7 @@ impl <Context,Option,Node> HCwT<Context,Option,Node> {
             debug: 0,
         };
         hc.levels.push(Level {
-            decisions,
+            options: decisions,
             nodes: Vec::new(),
         });
 
@@ -131,7 +131,7 @@ impl <Context,Option,Node> HCwT<Context,Option,Node> {
         // Level 0 is the initialization -- so we start processing with level 1
         for level in 1..self.levels.len() {
             if self.debug != 0 {
-                println!("Level {}, {} decisions", level, self.levels[level].decisions.len());
+                println!("Level {}, {} decisions", level, self.levels[level].options.len());
             }
             
             let mut new_list = Vec::new();
@@ -141,11 +141,11 @@ impl <Context,Option,Node> HCwT<Context,Option,Node> {
             // no prior
             
             if self.debug != 0 {
-                println!("Level {} options {}", level, self.levels[level].decisions.len());
+                println!("Level {} options {}", level, self.levels[level].options.len());
             }
-            for decision_index in 0..self.levels[level].decisions.len() {
+            for option_index in 0..self.levels[level].options.len() {
                 for node_index in 0..self.levels[level - 1].nodes.len() {
-                    generate(&self, context, level, decision_index, node_index, &mut new_list);
+                    generate(&self, context, level, option_index, node_index, &mut new_list);
                 }
             }
             self.levels[level].nodes = filter(self, context, level, &mut new_list);
@@ -157,12 +157,12 @@ impl <Context,Option,Node> HCwT<Context,Option,Node> {
     }
     pub fn new_decision(&self) -> Level<Option,Node> {
         Level {
-            decisions: Vec::new(),
+            options: Vec::new(),
             nodes: Vec::new(),
         }
     }
     pub fn add_option(&self, d: &mut Level<Option,Node>, detail: Option) {
-        d.decisions.push(detail);
+        d.options.push(detail);
     }
     pub fn add_decision(&mut self, d: Level<Option,Node>) {
         self.levels.push(d);

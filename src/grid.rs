@@ -1224,7 +1224,7 @@ fn trace(hcwt: &HCwT<Context,Decision,Node>, level: usize, index: usize, mapping
         // println!("{} << Selection cost {}, parent {}", node.selection, node.cost, hcwt.levels[level].nodes[index].parent);
         // println!("  Level {}", level);
         // if level < hcwt.levels.len() {
-            let d = &hcwt.levels[level].decisions[0];
+            let d = &hcwt.levels[level].options[0];
             for i in 0..d.modules.len() {
                 // println!("   module {} maps to bin {}", d.modules[i], d.mappings[node.selection][i]);
                 // println!("   module {} maps to bin ..", d.modules[i]);
@@ -1238,7 +1238,7 @@ fn trace(hcwt: &HCwT<Context,Decision,Node>, level: usize, index: usize, mapping
 
 fn generate(hcwt: &HCwT<Context,Decision,Node>, context: &mut Context, level: usize, decision_index: usize, parent_node_index: usize, nodes: &mut Vec<SelectionNode<Node>>) {
     // println!("Generate for level {}", level);
-    let detail = &hcwt.levels[level].decisions[decision_index];
+    let detail = &hcwt.levels[level].options[decision_index];
     let parent_node = &hcwt.levels[level - 1].nodes[parent_node_index];
     
     // Set up the mapping for the prior levels
@@ -1246,7 +1246,7 @@ fn generate(hcwt: &HCwT<Context,Decision,Node>, context: &mut Context, level: us
     // trace(hcwt, level - 1, parent_node_index, &mut tmpmap);
     trace(hcwt, level - 1, parent_node_index, &mut context.grid.map_mod2bin);
 
-    let d = &hcwt.levels[level].decisions[0];
+    let d = &hcwt.levels[level].options[0];
     for mi in 0..detail.mappings.len() {
         for i in 0..detail.modules.len() {
             // println!("Generate map module {} to bin {}", detail.modules[i], detail.mappings[mi][i]);
