@@ -5,24 +5,25 @@ fn main() {
     ferry_test();
 }
 
+pub struct Choice {
+    pub x: usize,
+}
+
 fn ferry_test() {
 
-    let mut ferry_root = FerryNode {
+    let root_node = FerryNode {
         left_length: 0,
         right_length: 0,
     };
-    let fc = FerryContext {
-        maxlen: 6,
-    };
 
-    let dec = FerryOption {
+    let opt = FerryOption {
         length: 0, left: false,
     };
-    let mut root_dec = Vec::new();
-    root_dec.push(dec);
-    let mut roots = Vec::new();
-    roots.push(ferry_root);
-    let mut ferry_problem: hcwt_r::HCwT<FerryContext,FerryOption,FerryNode> = hcwt_r::HCwT::new(root_dec, roots);
+    let mut root_opt = Vec::new();
+    root_opt.push(opt);
+    let mut root_nodes = Vec::new();
+    root_nodes.push(root_node);
+    let mut ferry_problem: hcwt_r::HCwT<FerryContext,FerryOption,FerryNode> = hcwt_r::HCwT::new(root_opt, root_nodes);
 
 
     let mut dx = ferry_problem.new_decision();

@@ -92,7 +92,7 @@ pub struct HCwT<Context,Option,Node> {
 // Create the solver, and we provide a struct
 // that gives additional information to the cost function.
 impl <Context,Option,Node> HCwT<Context,Option,Node> {
-    pub fn new(decisions: Vec<Option>, roots: Vec<Node>) -> HCwT<Context,Option,Node> {
+    pub fn new(root_options: Vec<Option>, root_nodes: Vec<Node>) -> HCwT<Context,Option,Node> {
         let mut hc = HCwT {
             // user_context: context,
             phantom_context: PhantomData,
@@ -100,11 +100,11 @@ impl <Context,Option,Node> HCwT<Context,Option,Node> {
             debug: 0,
         };
         hc.levels.push(Level {
-            options: decisions,
+            options: root_options,
             nodes: Vec::new(),
         });
 
-        for node in roots {
+        for node in root_nodes {
             hc.levels[0].nodes.push(SelectionNode {
                 parent: 0,
                 detail: node,
@@ -114,7 +114,7 @@ impl <Context,Option,Node> HCwT<Context,Option,Node> {
         hc
     }
 
-        // Pass information on the choices to the solver, and then
+    // Pass information on the choices to the solver, and then
     // the solver figures out how much this configuration
     // costs..  Returns that.  
     // Generate gets the HCWT struct, the level, and the parent decision index, and the parent node index.  From that,
@@ -130,10 +130,6 @@ impl <Context,Option,Node> HCwT<Context,Option,Node> {
         {
         // Level 0 is the initialization -- so we start processing with level 1
         for level in 1..self.levels.len() {
-            if self.debug != 0 {
-                println!("Level {}, {} decisions", level, self.levels[level].options.len());
-            }
-            
             let mut new_list = Vec::new();
 
             // Walk through the decisions at this level, combining with
