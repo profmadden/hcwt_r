@@ -4,8 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-pstools = "0.1.0"
-# pstools = {git = "https://github.com/profmadden/pstools_r"}
+# pstools = "0.1.0"
+pstools = {git = "https://github.com/profmadden/pstools_r"}
 rand = "0.8.5"
 scan_fmt = "0.2.6"
 
