@@ -214,7 +214,7 @@ impl Analytic {
         let mut pst = pstools::PSTool::new();
         let mut dim = 1.0;
         if self.threshold != 0.0 {
-            pst.set_scale(200.0/self.threshold); 
+            pst.add_scale(200.0/self.threshold); 
             dim = self.threshold * 0.2;
         }
 
